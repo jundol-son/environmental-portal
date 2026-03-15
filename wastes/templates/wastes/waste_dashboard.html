@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block content %}
+<h2 class="mb-4">📊 폐기물 통계 대시보드</h2>
+
+<div class="row">
+    <div class="col-md-5">
+        <div class="card shadow-sm p-3 mb-4">
+            <h5 class="fw-bold">종류별 배출 비중</h5>
+            <canvas id="typeChart"></canvas>
+        </div>
+    </div>
+    
+    <div class="col-md-7">
+        <div class="card shadow-sm p-3 mb-4">
+            <h5 class="fw-bold">월별 배출량 추이</h5>
+            <canvas id="trendChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script src="{% static 'js/waste_charts.js' %}"></script>
+
+<script>
+    // 장고 변수를 JS로 안전하게 변환하여 외부 함수 호출
+    renderWasteCharts(
+        {{ chart_data.labels|safe }},
+        {{ chart_data.values|safe }},
+        {{ chart_data.months|safe }},
+        {{ chart_data.monthly_values|safe }}
+    );
+</script>
+{% endblock %}

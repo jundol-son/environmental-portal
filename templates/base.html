@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>{% block head_title %}환경 통합 관리 포털{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <style>
+        /* 기본 레이아웃 설정 */
+        body { display: flex; min-height: 100vh; overflow-x: hidden; background: #f8f9fa; font-family: 'Pretendard', sans-serif; }
+        
+        /* 사이드바 디자인 */
+        #sidebar { 
+            width: 260px; 
+            background: #1a202c; 
+            color: white; 
+            flex-shrink: 0; 
+            display: flex; 
+            flex-direction: column; 
+            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+        }
+        
+        #sidebar .nav-link { color: rgba(255,255,255,.65); padding: 10px 15px; transition: 0.2s; border-radius: 6px; margin: 2px 10px; }
+        #sidebar .nav-link:hover { color: white; background: rgba(255,255,255,0.1); }
+        #sidebar .nav-link i { margin-right: 10px; }
+        #sidebar .fw-bold { color: #4fd1c5 !important; letter-spacing: 0.05em; font-size: 0.9rem; }
+
+        /* 접기/펴기 스타일 */
+        .category-link { cursor: pointer; display: flex; align-items: center; justify-content: space-between; text-decoration: none; }
+        .bi-chevron-down { transition: transform 0.3s; font-size: 0.8rem; }
+        .category-link[aria-expanded="true"] .bi-chevron-down { transform: rotate(180deg); }
+
+        /* 서브메뉴 스타일 */
+        .submenu { padding-left: 20px; list-style: none; margin-bottom: 10px; background: rgba(255,255,255,0.02); }
+        .submenu .nav-link { font-size: 0.85rem; padding: 8px 15px; }
+
+        /* 메인 콘텐츠 영역 */
+        #content { flex-grow: 1; padding: 40px; overflow-y: auto; width: calc(100% - 260px); }
+
+        /* 유저 섹션 */
+        .user-section { 
+            padding: 15px 20px; 
+            border-bottom: 1px solid rgba(255,255,255,0.1); 
+            background: rgba(0,0,0,0.1);
+            margin-bottom: 15px;
+        }
+        .btn-logout { background-color: #dc3545; border: none; color: white; font-weight: 500; font-size: 0.8rem; }
+        .btn-logout:hover { background-color: #bb2d3b; color: white; }
+
+        .admin-menu { margin-top: auto; padding-bottom: 20px; }
+
+        .nav-link[aria-expanded="true"] .bi-chevron-down {
+            transform: rotate(180deg);
+        }        
+    </style>
+</head>
+<body>
+    <div id="sidebar">    
+        <a href="/" class="d-flex align-items-center p-4 text-white text-decoration-none">
+            <span class="fs-4 fw-bold text-info"><i class="bi bi-bank2"></i> 환경 Portal</span>
+        </a>
+
+        <div class="user-section">
+            {% if user.is_authenticated %}
+                <div class="mb-3 small text-center text-light">
+                    <i class="bi bi-person-circle"></i> 
+                    <strong>{{ user.username }}</strong> 님 로그인 중
+                </div>
+                <form action="{% url 'logout' %}" method="post">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-logout btn-sm w-100 py-2">
+                        <i class="bi bi-box-arrow-right"></i> 로그아웃
+                    </button>
+                </form>
+            {% else %}
+                <a href="{% url 'login' %}" class="btn btn-outline-info btn-sm w-100 py-2">
+                    <i class="bi bi-box-arrow-in-right"></i> 로그인
+                </a>
+            {% endif %}
+        </div>        
+
+        <ul class="nav nav-pills flex-column mb-auto">
+            <li class="nav-item mt">
+                <a class="nav-link category-link fw-bold text-uppercase collapsed" data-bs-toggle="collapse" href="#lawMenu" role="button" aria-expanded="true">
+                    <span>🌿 환경그룹</span>
+                    <i class="bi bi-chevron-down"></i>
+                </a>
+                <ul class="collapse show submenu" id="lawMenu">
+                    <li>
+                        <a href="#chemicalSubmenu" data-bs-toggle="collapse" 
+                        class="nav-link text-white d-flex justify-content-between align-items-center" 
+                        aria-expanded="{% if '/chemicals/' in request.path or '/nics/' in request.path %}true{% else %}false{% endif %}">
+                            <span>
+                                <i class="bi bi-shield-check me-2"></i> 화관법
+                            </span>
+                            <i class="bi bi-chevron-down small"></i>
+                        </a>
+                        
+                        <ul class="collapse {% if '/chemicals/' in request.path or '/nics/' in request.path %}show{% endif %} list-unstyled ps-3" id="chemicalSubmenu">
+                            <li>
+                                <a href="{% url 'chemical_check' %}" class="nav-link small {% if '/chemicals/' in request.path %}text-info{% else %}text-white-50{% endif %}">
+                                    - 화관법 자가진단
+                                </a>
+                            </li>
+                            <li>
+                                <a href="{% url 'nics_notice_list' %}" class="nav-link small {% if '/nics/' in request.path %}text-info{% else %}text-white-50{% endif %}">
+                                    - 안전원 고시/공고
+                                </a>
+                            </li>
+                        </ul>
+                    </li>
+                    <li>
+                        <a href="#integratedSubmenu" data-bs-toggle="collapse" 
+                        class="nav-link text-white d-flex justify-content-between align-items-center" 
+                        aria-expanded="{% if '/integrated/' in request.path %}true{% else %}false{% endif %}">
+                            <span>
+                                <i class="bi bi-droplet me-2"></i> 환통법
+                            </span>
+                            <i class="bi bi-chevron-down small"></i>
+                        </a>
+                        
+                        <ul class="collapse {% if '/integrated/' in request.path %}show{% endif %} list-unstyled ps-3" id="integratedSubmenu">
+                            <li>
+                                <a href="{% url 'integrated:upload_page' %}" class="nav-link small {% if request.resolver_match.url_name == 'upload_page' %}text-info{% else %}text-white-50{% endif %}">
+                                    - 데이터 업로드 및 검증
+                                </a>
+                            </li>
+                            <li>
+                                <a href="{% url 'integrated:settings_page' %}" class="nav-link small {% if request.resolver_match.url_name == 'settings_page' %}text-info{% else %}text-white-50{% endif %}">
+                                    - 기준 정보 관리
+                                </a>
+                            </li>
+                            <li>
+                                <a href="{% url 'integrated:dashboard' %}" class="nav-link small {% if request.resolver_match.url_name == 'dashboard' %}text-info{% else %}text-white-50{% endif %}">
+                                    - 월별 이행률 대시보드
+                                </a>
+                            </li>
+                        </ul>
+                    </li>
+                    <li>
+                        <a href="#wasteSubmenu" data-bs-toggle="collapse" 
+                        class="nav-link text-white d-flex justify-content-between align-items-center" 
+                        aria-expanded="true">
+                            <span>
+                                <i class="bi bi-recycle me-2"></i> 폐기물
+                            </span>
+                            <i class="bi bi-chevron-down small"></i>
+                        </a>
+                        
+                        <ul class="collapse list-unstyled ps-3" id="wasteSubmenu">
+                            <li>
+                                <a href="{% url 'waste_list' %}" class="nav-link small text-white-50">
+                                    - 배출 내역 관리
+                                </a>
+                            </li>
+                            <li>
+                                <a href="{% url 'waste_dashboard' %}" class="nav-link small text-white-50">
+                                    - 통계 대시보드
+                                </a>
+                            </li>
+                        </ul>
+                    </li>
+                </ul>
+            </li>
+        </ul>
+
+
+        {% if user.is_staff %}
+        <div class="admin-menu">
+            <hr class="mx-3 text-secondary">
+            <a href="{% url 'admin_management' %}" class="nav-link text-info {% if '/admin-management/' in request.path %}active{% endif %}">
+                <i class="bi bi-person-plus"></i> 동료 권한 및 업로드
+            </a>
+        </div>
+        {% endif %}        
+    </div>
+
+    <div id="content">
+        <h2 class="fw-bold mb-4">{% block title %}{% endblock %}</h2>
+        {% block content %}
+        {% endblock %}
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

@@ -1,0 +1,191 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h2 class="mb-4">🌿 폐기물 배출 관리</h2>
+
+<div class="card p-3 mb-4 border-0 shadow-sm">
+    <form method="get" id="filterForm" class="row g-2 align-items-center">
+        <div class="col-md-2">
+            <select name="manager" class="form-select border-light bg-light">
+                <option value="">담당자 선택</option>
+                {% for m in managers %}
+                <option value="{{ m.id }}" {% if request.GET.manager == m.id|stringformat:"i" %}selected{% endif %}>{{ m.username }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2">
+            <select name="waste_type" class="form-select border-light bg-light">
+                <option value="">폐기물 종류 선택</option>
+                {% for type in waste_types %}
+                <option value="{{ type }}" {% if request.GET.waste_type == type %}selected{% endif %}>{{ type }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-3">
+            <div class="input-group">
+                <input type="date" name="start_date" class="form-control border-light bg-light" value="{{ request.GET.start_date }}" title="시작일">
+                <span class="input-group-text bg-light border-light text-muted">~</span>
+                <input type="date" name="end_date" class="form-control border-light bg-light" value="{{ request.GET.end_date }}" title="종료일">
+            </div>
+        </div>
+        <div class="col-md-2">
+            <input type="text" name="search_company" class="form-control border-light bg-light" placeholder="수거업체 검색" value="{{ request.GET.search_company }}">
+        </div>
+        <div class="col-md-3 d-flex gap-1">
+            <button type="submit" class="btn btn-primary flex-grow-1">조회</button>
+            <button type="button" class="btn btn-outline-secondary" onclick="resetFilters()" title="필터 초기화">
+                <i class="bi bi-arrow-counterclockwise"></i>
+            </button>
+        </div>   
+    </form>
+</div>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="d-flex gap-2">
+        <a href="{% url 'export_waste_excel' %}?{{ request.GET.urlencode }}" 
+           class="btn btn-light btn-sm text-success border shadow-sm text-decoration-none">
+            📂 전체 결과 엑셀
+        </a>
+        <button class="btn btn-light btn-sm text-success border shadow-sm" onclick="exportSelectedExcel()">
+            💾 선택 엑셀
+        </button>
+        <button class="btn btn-light btn-sm text-success border shadow-sm" onclick="generateReport()">
+            📊 선택 보고서 작성
+        </button>
+        <button class="btn btn-light btn-sm text-warning border shadow-sm" onclick="sendSelectedMail()">
+            ✉️ 메일 발송
+        </button>
+    </div>
+</div>
+
+<div class="card shadow-sm p-4 border-0">
+    <table class="table table-hover align-middle" id="wasteTable">
+        <thead class="table-light">
+            <tr>
+                <th style="width: 40px;"><input type="checkbox" id="selectAll" onclick="toggleAll(this)"></th> 
+                <th>담당자</th>
+                <th>폐기물 종류</th>
+                <th>배출량</th>
+                <th>수거업체</th>
+                <th>배출일시</th>
+                <th class="text-center">액션</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for waste in wastes %}
+            <tr>
+                <td><input type="checkbox" class="waste-checkbox" name="waste_ids" value="{{ waste.id }}"></td>
+                <td><span class="badge bg-secondary opacity-75">{{ waste.manager.username|default:"미지정" }}</span></td>
+                <td class="fw-bold">{{ waste.waste_type }}</td>
+                <td class="text-end fw-bold text-primary">{{ waste.quantity }} {{ waste.unit }}</td>
+                <td>{{ waste.company }}</td>
+                <td class="text-muted small">{{ waste.created_at|date:"Y-m-d H:i" }}</td>
+                <td class="text-center">
+                    <button class="btn btn-outline-primary btn-sm px-3" data-bs-toggle="modal" data-bs-target="#previewModal{{ waste.id }}">미리보기</button>
+                </td>
+            </tr>
+
+            <div class="modal fade" id="previewModal{{ waste.id }}" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">{{ waste.waste_type }} 배출 상세</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p><strong>담당자:</strong> {{ waste.manager.username|default:"미지정" }}</p>
+                            <p><strong>종류:</strong> {{ waste.waste_type }}</p>
+                            <p><strong>배출량:</strong> {{ waste.quantity }} {{ waste.unit }}</p>
+                            <p><strong>수거업체:</strong> {{ waste.company }}</p>
+                            <p><strong>배출 일시:</strong> {{ waste.created_at|date:"Y-m-d H:i" }}</p>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="modal fade" id="multiMailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title fw-bold">📧 업체 협조 요청 메일 발송</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">수신 대상 (선택된 업체)</label>
+                    <div id="selectedCustomerList" class="p-2 border rounded bg-light" style="max-height: 100px; overflow-y: auto;"></div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">메일 제목</label>
+                    <input type="text" id="mailSubject" class="form-control" placeholder="폐기물 배출 및 처리 협조 요청의 건">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">메일 내용</label>
+                    <textarea id="mailContent" class="form-control" rows="8"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+                <button type="button" class="btn btn-warning" onclick="confirmSendMail()">발송하기</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="d-flex justify-content-between align-items-center mt-4">
+    <div class="text-muted small">
+        총 {{ wastes.paginator.count }}건 중 {{ wastes.start_index }}-{{ wastes.end_index }} 표시 
+    </div>
+
+    <nav>
+        <ul class="pagination mb-0">
+            {% if wastes.has_previous %}
+                <li class="page-item"><a class="page-link" href="?page=1&{{ request.GET.urlencode }}">« 처음</a></li>
+                <li class="page-item"><a class="page-link" href="?page={{ wastes.previous_page_number }}&{{ request.GET.urlencode }}">이전</a></li>
+            {% endif %}
+
+            <li class="page-item d-flex align-items-center bg-primary px-2 rounded-start rounded-end">
+                <input type="number" id="directPageInput" 
+                       class="form-control form-control-sm border-0 text-center fw-bold" 
+                       style="width: 50px; background: transparent; color: white;"
+                       value="{{ wastes.number }}"
+                       onkeypress="if(event.keyCode==13) jumpToPageDirect()">
+                <span class="text-white mx-1">/ {{ wastes.paginator.num_pages }}</span>
+            </li>
+
+            {% if wastes.has_next %}
+                <li class="page-item"><a class="page-link" href="?page={{ wastes.next_page_number }}&{{ request.GET.urlencode }}">다음</a></li>
+                <li class="page-item"><a class="page-link" href="?page={{ wastes.paginator.num_pages }}&{{ request.GET.urlencode }}">끝 »</a></li>
+            {% endif %}
+        </ul>
+    </nav>
+
+    <div style="width: 120px;">
+        <form method="get">
+            {% for key, value in request.GET.items %}{% if key != 'per_page' %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endif %}{% endfor %}
+            <select name="per_page" class="form-select form-select-sm border-light bg-light" onchange="this.form.submit()">
+                <option value="10" {% if per_page == 10 %}selected{% endif %}>10줄씩</option>
+                <option value="20" {% if per_page == 20 %}selected{% endif %}>20줄씩</option>
+                <option value="50" {% if per_page == 50 %}selected{% endif %}>50줄씩</option>
+            </select>
+        </form>
+    </div>
+</div>
+
+{% load static %} <script src="{% static 'js/waste_management.js' %}"></script>
+
+
+<script>
+    // 엔터키 입력 시 독립된 파일의 함수 호출
+    document.getElementById('directPageInput').onkeypress = function(e) {
+        if(e.keyCode == 13) jumpToPageDirect("{{ wastes.paginator.num_pages }}");
+    };
+</script>
+{% endblock %}

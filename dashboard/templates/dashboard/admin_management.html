@@ -1,0 +1,226 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="fw-bold">1-2) 시스템 관리 및 일괄 작업</h2>
+    <span class="badge bg-primary px-3 py-2">관리자 모드</span>
+</div>
+s
+<div class="row g-4">
+    <div class="col-md-5">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white border-0 pt-4 px-4">
+                <ul class="nav nav-pills nav-fill bg-light p-1 rounded-3" id="adminTab" role="tablist">
+                    <li class="nav-item">
+                        <button class="nav-link {% if not preview_data %}active{% endif %} btn-sm" data-bs-toggle="tab" data-bs-target="#singleAdd">개별 등록</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link {% if preview_data %}active{% endif %} btn-sm" data-bs-toggle="tab" data-bs-target="#excelUpload">일괄 업로드</button>
+                    </li>
+                </ul>
+            </div>
+            <div class="card-body p-4 tab-content">
+                <div class="tab-pane fade {% if not preview_data %}show active{% endif %}" id="singleAdd">
+                    <p class="text-muted small mb-4">신규 고객의 자산 정보를 직접 입력하여 등록합니다.</p>
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="add_single_asset" value="1">
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">고객명</label>
+                            <input type="text" name="name" class="form-control bg-light border-0" required>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col">
+                                <label class="form-label small fw-bold">자산군</label>
+                                <input type="text" name="asset_type" class="form-control bg-light border-0" placeholder="예: 주식" required>
+                            </div>
+                            <div class="col">
+                                <label class="form-label small fw-bold">잔고</label>
+                                <input type="number" name="balance" class="form-control bg-light border-0" required>
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <label class="form-label small fw-bold">이메일</label>
+                            <input type="email" name="email" class="form-control bg-light border-0" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100 py-2 shadow-sm">고객 등록 완료</button>
+                    </form>
+                </div>
+
+                <div class="tab-pane fade {% if preview_data %}show active{% endif %}" id="excelUpload">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <p class="text-muted small mb-0">엑셀 파일을 업로드하여 데이터를 등록합니다.</p>
+                        <a href="{% url 'download_sample_excel' %}" class="btn btn-link btn-sm text-decoration-none p-0 fw-bold">
+                            📥 샘플 양식 받기
+                        </a>
+                    </div>
+
+                    <form method="post" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">엑셀 파일 선택 (.xlsx)</label>
+                            <input type="file" name="excel_file" class="form-control bg-light border-0" accept=".xlsx" required>
+                        </div>
+                        <div class="bg-light p-3 rounded mb-3 small text-muted border border-dashed">
+                            <div class="fw-bold text-dark mb-1">💡 작성 가이드</div>
+                            <ul class="ps-3 mb-0">
+                                <li>샘플 양식의 열 순서를 유지해 주세요.</li>
+                                <li>잔고는 숫자만 입력 가능합니다.</li>
+                            </ul>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100 py-2 shadow-sm">업로드 시작 (검증)</button>
+                    </form>
+
+                    {% if preview_data %}
+                    <div class="mt-4 border-top pt-4">
+                        <h6 class="fw-bold text-primary mb-3">🔍 등록 예정 리스트 확인</h6>
+                        <div class="table-responsive border rounded bg-white" style="max-height: 250px; overflow-y: auto;">
+                            <table class="table table-sm table-hover mb-0" style="font-size: 0.85rem;">
+                                <thead class="table-light sticky-top">
+                                    <tr>
+                                        <th>고객명</th>
+                                        <th>자산군</th>
+                                        <th class="text-end">잔고</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in preview_data %}
+                                    <tr>
+                                        <td>{{ row.고객명 }}</td>
+                                        <td>{{ row.자산군 }}</td>
+                                        <td class="text-end text-primary fw-bold">{{ row.잔고 }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <form method="post" class="mt-3">
+                            {% csrf_token %}
+                            <input type="hidden" name="confirm_upload" value="1">
+                            <div class="d-flex gap-2">
+                                <a href="{% url 'admin_management' %}" class="btn btn-outline-secondary flex-grow-1">취소</a>
+                                <button type="submit" class="btn btn-success flex-grow-1 fw-bold shadow-sm">최종 데이터 확정</button>
+                            </div>
+                        </form>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-7">
+        <div class="card border-0 shadow-sm p-4 h-100">
+            <h5 class="fw-bold mb-3">👥 동료 권한 관리</h5>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light small text-muted text-uppercase">
+                        <tr>
+                            <th>사용자(ID)</th>
+                            <th>상태</th>
+                            <th>관리자 권한</th>
+                            <th class="text-center">설정</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for u in users %}
+                        <tr>
+                            <td>
+                                <div class="fw-bold">{{ u.username }}</div>
+                                <div class="text-muted extra-small">{{ u.email }}</div>
+                            </td>
+                            <td>
+                                {% if u.is_active %}
+                                <span class="badge bg-success-subtle text-success px-2 border border-success-subtle">활성</span>
+                                {% else %}
+                                <span class="badge bg-secondary-subtle text-secondary px-2 border border-secondary-subtle">비활성</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" {% if u.is_staff %}checked{% endif %} disabled>
+                                    <label class="small text-muted ms-1">{% if u.is_staff %}Staff{% else %}User{% endif %}</label>
+                                </div>
+                            </td>
+                            <td class="text-center">
+                                <button class="btn btn-outline-secondary btn-sm px-3" 
+                                        onclick="openUserModal('{{ u.id }}', '{{ u.username }}', {{ u.is_staff|yesno:'true,false' }}, {{ u.is_active|yesno:'true,false' }})">
+                                    수정
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="userEditModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold" id="modalUserName">사용자 권한 설정</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <input type="hidden" id="modalUserId">
+                <div class="d-flex justify-content-between align-items-center mb-4 p-3 bg-light rounded-3">
+                    <div>
+                        <div class="fw-bold">시스템 관리자 권한</div>
+                        <div class="small text-muted">관리자 페이지 접근 가능</div>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="modalIsStaff">
+                    </div>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mb-4 p-3 bg-light rounded-3">
+                    <div>
+                        <div class="fw-bold">계정 활성화 상태</div>
+                        <div class="small text-muted">비활성 시 로그인 불가</div>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="modalIsActive">
+                    </div>
+                </div>
+                <button class="btn btn-primary w-100 py-2 shadow-sm" onclick="saveUserPermissions()">설정 저장하기</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function openUserModal(id, name, isStaff, isActive) {
+    document.getElementById('modalUserId').value = id;
+    document.getElementById('modalUserName').innerText = name + ' PB님 권한 수정';
+    document.getElementById('modalIsStaff').checked = isStaff;
+    document.getElementById('modalIsActive').checked = isActive;
+    new bootstrap.Modal(document.getElementById('userEditModal')).show();
+}
+
+function saveUserPermissions() {
+    const data = {
+        user_id: document.getElementById('modalUserId').value,
+        is_staff: document.getElementById('modalIsStaff').checked,
+        is_active: document.getElementById('modalIsActive').checked,
+        csrfmiddlewaretoken: '{{ csrf_token }}'
+    };
+
+    fetch('/update-user-status/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams(data)
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.status === 'success') {
+            location.reload(); 
+        } else {
+            alert("저장 중 오류가 발생했습니다.");
+        }
+    });
+}
+</script>
+{% endblock %}

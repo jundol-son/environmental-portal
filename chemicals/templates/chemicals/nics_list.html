@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+
+{% block title %}안전원 고시/공고 목록{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <a href="?update=1" class="btn btn-primary">
+        <i class="bi bi-arrow-clockwise"></i> 최신 고시 갱신하기
+    </a>
+</div>
+
+{% if messages %}
+    {% for message in messages %}
+        <div class="alert alert-success">{{ message }}</div>
+    {% endfor %}
+{% endif %}
+<div class="card shadow-sm">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover mt-3">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width: 15%">등록일</th>
+                        <th>제목</th>
+                        <th style="width: 10%">상세보기</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for notice in notices %}
+                    <tr>
+                        <td>{{ notice.reg_date|date:"Y-m-d" }}</td>
+                        <td>
+                            <span class="fw-bold">{{ notice.title }}</span>
+                            {% if "첨부파일" not in notice.file_links %}
+                                <i class="bi bi-file-earmark-arrow-down text-primary ms-1"></i>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <button class="btn btn-outline-info btn-sm" data-bs-toggle="collapse" data-bs-target="#content{{ notice.id }}">내용보기</button>
+                        </td>
+                    </tr>
+                    <tr class="collapse" id="content{{ notice.id }}">
+                        <td colspan="3" class="bg-light p-4 shadow-inner">
+                            <div class="mb-4">
+                                <h6 class="fw-bold text-secondary mb-3">
+                                    <i class="bi bi-paperclip"></i> 첨부파일 (클릭 시 다운로드)
+                                </h6>
+                                <div class="d-flex flex-wrap gap-2">
+                                    {% for file in notice.get_file_list %}
+                                        <a href="{{ file.link }}" class="btn btn-sm btn-white border shadow-sm d-inline-flex align-items-center" target="_blank">
+                                            <i class="bi bi-file-earmark-arrow-down-fill text-primary me-2"></i>
+                                            <span class="text-dark">{{ file.name }}</span>
+                                        </a>
+                                    {% empty %}
+                                        <span class="text-muted small">첨부파일이 없습니다.</span>
+                                    {% endfor %}
+                                </div>
+                            </div>
+
+                            <hr class="my-4">
+
+                            <h6 class="fw-bold text-secondary mb-3"><i class="bi bi-justify-left"></i> 공고 상세 내용</h6>
+                            <div class="p-3 bg-white border rounded" style="white-space: pre-wrap; line-height: 1.6; font-size: 0.95rem;">
+                                {{ notice.content }}
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="3" class="text-center py-5">데이터가 없습니다. 크롤링을 실행해 주세요.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

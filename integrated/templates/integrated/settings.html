@@ -1,0 +1,590 @@
+{% extends 'base.html' %}
+{% block title %}환통법 통합 기준 정보 관리{% endblock %}
+
+{% block content %}
+<div class="card shadow-sm border-0" style="border-radius: 12px;">
+    <div class="card-body p-4">
+        <ul class="nav nav-tabs mb-4" id="settingsTab" role="tablist">
+            <li class="nav-item">
+                <button class="nav-link active fw-bold" data-bs-toggle="tab" data-bs-target="#tab-matrix">
+                    <i class="bi bi-grid-3x3-gap me-2"></i>통합 기준 관리
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link fw-bold" data-bs-toggle="tab" data-bs-target="#tab-facility">
+                    <i class="bi bi-buildings me-2"></i>설비 마스터 관리
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link fw-bold" data-bs-toggle="tab" data-bs-target="#tab-substance">
+                    <i class="bi bi-funnel me-2"></i>측정물질 마스터
+                </button>
+            </li>
+        </ul>
+
+        <div class="tab-content">
+            <div class="tab-pane fade show active" id="tab-matrix">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <div>
+                        <h5 class="fw-bold mb-1 text-primary">시설별 측정 기준 현황</h5>
+                        <p class="text-muted small mb-0">시설명을 클릭하면 개별 수정이 가능하며, 통합 엑셀로 일괄 업데이트도 가능합니다.</p>
+                    </div>
+                    <div class="btn-group shadow-sm">
+                        <a href="{% url 'integrated:download_settings_sample' %}?target=config" class="btn btn-outline-secondary btn-sm px-3">
+                            <i class="bi bi-download me-1"></i> 통합양식 다운로드
+                        </a>
+                        <button class="btn btn-primary btn-sm px-3" onclick="document.getElementById('file-integrated').click()">
+                            <i class="bi bi-file-earmark-arrow-up me-1"></i> 통합 엑셀 업로드
+                        </button>
+                        <input type="file" id="file-integrated" class="d-none" onchange="importMasterData('config', this)">
+                    </div>
+                </div>
+
+                <div class="table-responsive bg-white rounded-3 border" style="max-height: 600px;">
+                    <table class="table table-bordered align-middle mb-0" style="font-size: 0.78rem; min-width: 1200px;">
+                        <thead class="table-light sticky-top" style="top: 0; z-index: 10;">
+                            <tr>
+                                <th rowspan="2" class="text-center bg-light" style="width: 200px; position: sticky; left: 0; z-index: 11;">세부라인 방지시설</th>
+                                {% for s in substances %}
+                                <th colspan="2" class="text-center border-start">{{ s.name }}<br><small class="text-muted">({{ s.unit }})</small></th>
+                                {% endfor %}
+                            </tr>
+                            <tr>
+                                {% for s in substances %}
+                                <th class="text-center small text-danger border-start" style="width: 70px;">사내</th>
+                                <th class="text-center small text-muted" style="width: 70px;">법적</th>
+                                {% endfor %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in matrix_data %}
+                            <tr>
+                                <td class="ps-3 fw-bold bg-light-subtle" style="position: sticky; left: 0; z-index: 5; cursor: pointer;" onclick="openConfigModal('{{ row.facility.id }}')">
+                                    <span class="text-primary text-decoration-underline">{{ row.facility.sec }}</span>
+                                    <div class="text-muted small fw-normal">{{ row.facility.facility_no }}</div>
+                                </td>
+                                {% for status in row.substance_status %}
+                                <td class="text-center border-start {% if status.is_active %}bg-white text-danger fw-bold{% else %}bg-light-subtle text-muted{% endif %}">
+                                    {{ status.val1 }}
+                                </td>
+                                <td class="text-center {% if status.is_active %}bg-white text-muted{% else %}bg-light-subtle text-muted{% endif %}">
+                                    {{ status.val2 }}
+                                </td>
+                                {% endfor %}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="tab-facility">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <h5 class="fw-bold mb-1">방지시설 마스터 정보 관리</h5>
+                        <p class="text-muted small mb-0">시설명을 클릭하여 상세 제원을 수정하세요.</p>
+                    </div>
+                    <div class="btn-group shadow-sm">
+                        <button class="btn btn-primary btn-sm" onclick="openNewFacilityModal()">
+                            <i class="bi bi-plus-lg me-1"></i> 개별 등록
+                        </button>
+                        
+                        <a href="{% url 'integrated:download_settings_sample' %}?target=facility" class="btn btn-outline-secondary btn-sm">
+                            <i class="bi bi-download me-1"></i> 양식 다운로드
+                        </a>
+                        
+                        <button class="btn btn-outline-success btn-sm" onclick="document.getElementById('file-facility-only').click()">
+                            <i class="bi bi-file-earmark-arrow-up me-1"></i> 설비 일괄 등록
+                        </button>
+                        <input type="file" id="file-facility-only" class="d-none" onchange="importMasterData('facility', this)">
+                    </div>
+                </div>
+
+                <div class="row g-2 mb-3 bg-light p-3 rounded-3 border mx-0">
+                    <div class="col-md-3">
+                        <input type="text" id="search-sec" class="form-control form-control-sm" placeholder="방지시설명(SEC) 검색..." onkeyup="filterFacilityTable()">
+                    </div>
+                    <div class="col-md-2">
+                        <input type="text" id="search-line" class="form-control form-control-sm" placeholder="라인 검색..." onkeyup="filterFacilityTable()">
+                    </div>
+                    <div class="col-md-2">
+                        <input type="text" id="search-exhaust" class="form-control form-control-sm" placeholder="배기 검색..." onkeyup="filterFacilityTable()">
+                    </div>
+                    <div class="col-md-2">
+                        <select id="search-workplace" class="form-select form-select-sm" onchange="filterFacilityTable()">
+                            <option value="">전체 사업장</option>
+                            <option value="기흥">기흥</option>
+                            <option value="화성">화성</option>
+                            <option value="평택">평택</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <select id="search-status" class="form-select form-select-sm" onchange="filterFacilityTable()">
+                            <option value="">전체 상태</option>
+                            <option value="운영">운영</option>
+                            <option value="폐쇄">폐쇄</option>
+                        </select>
+                    </div>
+                    <div class="col-md-1">
+                        <button class="btn btn-secondary btn-sm w-100" onclick="resetFacilityFilter()"><i class="bi bi-arrow-counterclockwise"></i></button>
+                    </div>
+                </div>
+
+                <div class="table-responsive border rounded bg-white" style="max-height: 550px;">
+                    <table id="facility-master-table" class="table table-hover align-middle mb-0" style="font-size: 0.78rem; white-space: nowrap;">
+                        <thead class="table-dark sticky-top">
+                            <tr>
+                                <th class="ps-3">세부라인 방지시설(SEC)</th>
+                                <th>시설번호</th>
+                                <th>방지시설번호</th>
+                                <th>업체번호</th> <th>사업장</th>
+                                <th>라인</th>
+                                <th>배기</th>
+                                <th>용량</th>
+                                <th class="text-center">TMS</th>
+                                <th class="text-center">상태</th>
+                                <th class="pe-3">직경(mm)</th> </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in matrix_data %}
+                            <tr style="cursor: pointer;" onclick="openFacilityDetailModal('{{ row.facility.id }}')">
+                                <td class="ps-3 fw-bold text-primary cell-sec">{{ row.facility.sec }}</td>
+                                <td>{{ row.facility.facility_no|default:"-" }}</td>
+                                <td>{{ row.facility.prevent_no|default:"-" }}</td>
+                                <td>{{ row.facility.company_no|default:"-" }}</td> <td class="cell-workplace">{{ row.facility.workplace|default:"-" }}</td>
+                                <td class="cell-line">{{ row.facility.line|default:"-" }}</td>
+                                <td class="cell-exhaust">{{ row.facility.exhaust|default:"-" }}</td>
+                                <td>{{ row.facility.capacity|default:"-" }}</td>
+                                <td class="text-center">
+                                    <span class="badge {% if row.facility.tms_yn == 'O' %}bg-info{% else %}bg-light text-muted border{% endif %}">{{ row.facility.tms_yn|default:"X" }}</span>
+                                </td>
+                                <td class="text-center cell-status">
+                                    <span class="badge {% if row.facility.status == '운영' %}bg-success-subtle text-success{% else %}bg-danger-subtle text-danger{% endif %}">{{ row.facility.status|default:"운영" }}</span>
+                                </td>
+                                <td class="pe-3">{{ row.facility.diameter|default:"-" }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="modal fade" id="facilityDetailModal" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-md modal-dialog-centered">
+                    <div class="modal-content border-0 shadow">
+                        <div class="modal-header bg-dark text-white py-2">
+                            <h6 class="modal-title fw-bold">설비 정보 관리</h6>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body p-4">
+                            <input type="hidden" id="edit-f-id">
+                            <div class="row g-3">
+                                <div class="col-12">
+                                    <label class="form-label small fw-bold">세부라인 방지시설(SEC) *수정 가능</label>
+                                    <input type="text" id="edit-f-sec" class="form-control border-primary">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-bold">시설번호</label>
+                                    <input type="text" id="edit-f-no" class="form-control form-control-sm">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-bold">방지시설번호</label>
+                                    <input type="text" id="edit-f-prevent" class="form-control form-control-sm">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-bold">업체번호</label>
+                                    <input type="text" id="edit-f-company" class="form-control form-control-sm">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-bold">사업장</label>
+                                    <input type="text" id="edit-f-workplace" class="form-control form-control-sm">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-bold">라인</label>
+                                    <input type="text" id="edit-f-line" class="form-control form-control-sm">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-bold">배기</label>
+                                    <input type="text" id="edit-f-exhaust" class="form-control form-control-sm">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-bold">용량</label>
+                                    <input type="text" id="edit-f-capacity" class="form-control form-control-sm">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-bold">직경(mm)</label>
+                                    <input type="number" id="edit-f-diameter" class="form-control form-control-sm">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-bold">TMS 여부</label>
+                                    <select id="edit-f-tms" class="form-select form-select-sm">
+                                        <option value="O">O (설치)</option>
+                                        <option value="X">X (미설치)</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-bold">운영 상태</label>
+                                    <select id="edit-f-status" class="form-select form-select-sm">
+                                        <option value="운영">운영</option>
+                                        <option value="폐쇄">폐쇄</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer bg-light py-2">
+                            <button type="button" class="btn btn-outline-danger btn-sm me-auto" id="facility-delete-btn" onclick="deleteFacilityMaster()">시설 삭제</button>
+                            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">닫기</button>
+                            <button type="button" class="btn btn-primary btn-sm px-4 fw-bold" onclick="saveFacilityDetail()">정보 저장</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="tab-substance">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h5 class="fw-bold mb-0">측정 물질 마스터 데이터</h5>
+                    <button class="btn btn-outline-primary btn-sm" onclick="editItem('substance', null)">
+                        <i class="bi bi-plus-lg"></i> 새 물질 추가
+                    </button>
+                </div>
+                <div class="table-responsive border rounded bg-white">
+                    <table class="table table-hover align-middle mb-0" style="font-size: 0.85rem;">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-3">물질명</th>
+                                <th>기본 단위</th>
+                                <th class="text-center">관리</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for s in substances %}
+                            <tr>
+                                <td class="ps-3 fw-bold text-primary">{{ s.name }}</td>
+                                <td><span class="badge border text-dark">{{ s.unit }}</span></td>
+                                <td class="text-center">
+                                    <button class="btn btn-sm btn-light border" onclick="deleteItem('substance', '{{ s.id }}')"><i class="bi bi-trash text-danger"></i></button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="configModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-light">
+                <h5 class="modal-title fw-bold text-primary" id="modalFacilityName">시설 설정</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light small">
+                            <tr>
+                                <th class="ps-4">측정대상</th>
+                                <th>물질명</th>
+                                <th>사내기준</th>
+                                <th>법적기준</th>
+                                <th class="pe-4">단위</th>
+                            </tr>
+                        </thead>
+                        <tbody id="modalTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer bg-light">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+                <button type="button" class="btn btn-primary fw-bold" onclick="saveFacilityConfig()">저장하기</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// 1. 공통 데이터 처리
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+async function importMasterData(type, input) {
+    if (!input.files || !input.files[0]) return;
+    const formData = new FormData();
+    formData.append('file', input.files[0]);
+    formData.append('type', type);
+    if(!confirm("엑셀 데이터를 통해 마스터 정보를 일괄 업데이트하시겠습니까?")) {
+        input.value = ''; return;
+    }
+    try {
+        const res = await fetch("/integrated/api/import-master/", {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+        });
+        const data = await res.json();
+        alert(data.message);
+        location.reload();
+    } catch (e) { alert("통신 오류 발생"); }
+}
+
+async function deleteItem(type, id) {
+    if(!confirm("정말 삭제하시겠습니까? 관련 데이터가 모두 삭제될 수 있습니다.")) return;
+    const formData = new FormData();
+    formData.append('type', type);
+    formData.append('id', id);
+    try {
+        await fetch("/integrated/api/delete-master/", {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+        });
+        location.reload();
+    } catch (e) { alert("삭제 실패"); }
+}
+
+// 2. 개별 모달 제어 로직
+let currentEditingFacilityId = null;
+
+async function openConfigModal(facilityId) {
+    currentEditingFacilityId = facilityId;
+    
+    try {
+        const res = await fetch(`/integrated/api/get-facility-config/${facilityId}/`);
+        if (!res.ok) throw new Error("데이터를 가져오지 못했습니다.");
+        const data = await res.json();
+        
+        // 1. 데이터 채우기
+        const titleEl = document.getElementById('modalFacilityName');
+        if (titleEl) titleEl.innerText = `[${data.facility_name}] 측정 항목 설정`;
+        
+        const tbody = document.getElementById('modalTableBody');
+        tbody.innerHTML = '';
+        
+        data.substances.forEach(s => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="ps-4">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input substance-active" type="checkbox" data-id="${s.id}" ${s.is_active ? 'checked' : ''}>
+                    </div>
+                </td>
+                <td class="fw-bold">${s.name}</td>
+                <td><input type="number" step="any" class="form-control form-control-sm val1" value="${s.val1}" style="width:90px;"></td>
+                <td><input type="number" step="any" class="form-control form-control-sm val2" value="${s.val2}" style="width:90px;"></td>
+                <td class="text-muted pe-4 small">${s.unit}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+        
+        // 2. 모달 띄우기 (Bootstrap 5 표준 방식)
+        const configModalEl = document.getElementById('configModal');
+        const modalInstance = bootstrap.Modal.getOrCreateInstance(configModalEl);
+        modalInstance.show();
+
+    } catch (e) {
+        console.error(e);
+        alert("모달을 여는 중 에러가 발생했습니다: " + e.message);
+    }
+}
+
+async function saveFacilityConfig() {
+    const items = [];
+    document.querySelectorAll('#modalTableBody tr').forEach(tr => {
+        const activeInput = tr.querySelector('.substance-active');
+        items.push({
+            substance_id: activeInput.dataset.id,
+            is_active: activeInput.checked,
+            val1: tr.querySelector('.val1').value,
+            val2: tr.querySelector('.val2').value
+        });
+    });
+    try {
+        const res = await fetch('/integrated/api/save-facility-config/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+            body: JSON.stringify({ facility_id: currentEditingFacilityId, items: items })
+        });
+        const result = await res.json();
+        if (res.ok) location.reload();
+        else alert("오류: " + result.message);
+    } catch (e) { alert("통신 오류 발생"); }
+}
+
+function editItem(type, id) {
+    alert("개별 수정 기능은 엑셀 업로드를 권장하며, 현재 인라인 편집 기능을 보강 중입니다.");
+}
+// 1. 실시간 테이블 필터 기능
+function filterFacilityTable() {
+    const sec = document.getElementById('search-sec').value.toLowerCase();
+    const line = document.getElementById('search-line').value.toLowerCase();
+    const exhaust = document.getElementById('search-exhaust').value.toLowerCase();
+    const workplace = document.getElementById('search-workplace').value;
+    const status = document.getElementById('search-status').value;
+
+    const rows = document.querySelectorAll('#facility-master-table tbody tr');
+
+    rows.forEach(row => {
+        const textSec = row.querySelector('.cell-sec').innerText.toLowerCase();
+        const textLine = row.querySelector('.cell-line').innerText.toLowerCase();
+        const textExhaust = row.querySelector('.cell-exhaust').innerText.toLowerCase();
+        const textWorkplace = row.querySelector('.cell-workplace').innerText;
+        const textStatus = row.querySelector('.cell-status').innerText.trim();
+
+        const match = textSec.includes(sec) &&
+                      textLine.includes(line) &&
+                      textExhaust.includes(exhaust) &&
+                      (workplace === "" || textWorkplace === workplace) &&
+                      (status === "" || textStatus === status);
+
+        row.style.display = match ? "" : "none";
+    });
+}
+
+function resetFacilityFilter() {
+    document.querySelectorAll('.tab-pane#tab-facility input, .tab-pane#tab-facility select').forEach(el => el.value = "");
+    filterFacilityTable();
+}
+
+// 2. 모달 열기 (상태, 배기 필드 추가)
+async function openFacilityDetailModal(id) {
+    const res = await fetch(`/integrated/api/get-facility-detail/${id}/`);
+    const f = await res.json();
+
+    document.getElementById('edit-f-id').value = f.id;
+    document.getElementById('edit-f-sec').value = f.sec;
+    document.getElementById('edit-f-no').value = f.facility_no;
+    document.getElementById('edit-f-prevent').value = f.prevent_no;
+    document.getElementById('edit-f-workplace').value = f.workplace;
+    document.getElementById('edit-f-line').value = f.line;
+    document.getElementById('edit-f-exhaust').value = f.exhaust; // 추가
+    document.getElementById('edit-f-capacity').value = f.capacity;
+    document.getElementById('edit-f-tms').value = f.tms_yn;
+    document.getElementById('edit-f-status').value = f.status; // 추가
+
+    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('facilityDetailModal'));
+    modal.show();
+}
+
+async function saveFacilityDetail() {
+    // 1. 데이터 수집 (안전하게 가져오기 위해 헬퍼 함수 사용)
+    const getVal = (id) => {
+        const el = document.getElementById(id);
+        return el ? el.value.trim() : ''; // 공백 제거 처리 추가
+    };
+
+    // 2. 수집 데이터 구성 (업체번호 오타 수정 및 직경 필드 추가)
+    const data = {
+        id: getVal('edit-f-id'),
+        sec: getVal('edit-f-sec'),
+        facility_no: getVal('edit-f-no'),
+        prevent_no: getVal('edit-f-prevent'),
+        company_no: getVal('edit-f-company'),    // [수정] document.getVal 오타 수정
+        workplace: getVal('edit-f-workplace'),
+        line: getVal('edit-f-line'),
+        exhaust: getVal('edit-f-exhaust'), 
+        capacity: getVal('edit-f-capacity'),
+        diameter: getVal('edit-f-diameter'),    // [추가] 누락되었던 직경 필드 반영
+        tms_yn: getVal('edit-f-tms'),
+        status: getVal('edit-f-status'),
+    };
+
+    console.log("저장 시도 데이터:", data); // 디버깅용
+
+    // 3. 필수값 검증 (최소한 설비명은 있어야 함)
+    if (!data.sec) {
+        alert("세부라인 방지시설(SEC) 명칭은 필수 입력 사항입니다.");
+        return;
+    }
+
+    try {
+        // CSRF 토큰 확인 (Django 필수)
+        const csrftoken = getCookie('csrftoken');
+        if (!csrftoken) {
+            alert("보안 토큰(CSRF)을 찾을 수 없습니다. 페이지를 새로고침 해주세요.");
+            return;
+        }
+
+        const res = await fetch('/integrated/api/save-facility-detail/', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json', 
+                'X-CSRFToken': csrftoken 
+            },
+            body: JSON.stringify(data)
+        });
+
+        const result = await res.json();
+        
+        if (res.ok) {
+            alert(result.message || "정보가 성공적으로 저장되었습니다.");
+            // 현재 보고 있던 '설비 마스터 관리' 탭으로 돌아가기 위해 파라미터 유지하며 새로고침
+            window.location.href = window.location.pathname + "?tab=tab-facility";
+        } else {
+            alert("저장 실패: " + (result.message || "서버 응답 오류"));
+        }
+    } catch (e) {
+        console.error("Critical Error:", e);
+        alert("서버와 통신 중 오류가 발생했습니다. (네트워크 상태 확인 필요)");
+    }
+}
+// 설비 삭제 (별도 버튼으로 분리)
+async function deleteFacilityMaster() {
+    const id = document.getElementById('edit-f-id').value;
+    if(!confirm("이 설비를 삭제하면 모든 측정 매핑 정보가 삭제됩니다. 계속하시겠습니까?")) return;
+    
+    // 기존 deleteItem 함수 재사용
+    deleteItem('facility', id);
+}
+
+function openNewFacilityModal() {
+    // 1. 폼 초기화 (ID를 비워야 서버에서 '신규 생성'으로 인식합니다)
+    const modal = document.getElementById('facilityDetailModal');
+    if (!modal) return;
+
+    // ID 필드 비우기
+    const idField = document.getElementById('facility-edit-id');
+    if (idField) idField.value = "";
+
+    // 모든 input, select 초기화
+    modal.querySelectorAll('input:not([type=hidden])').forEach(input => input.value = "");
+    modal.querySelectorAll('select').forEach(select => {
+        // 기본값 설정 (예: 운영, X 등)
+        if (select.id.includes('status')) select.value = "운영";
+        else if (select.id.includes('tms')) select.value = "X";
+        else select.selectedIndex = 0;
+    });
+
+    // 2. 타이틀 변경
+    const title = modal.querySelector('.modal-title');
+    if (title) title.innerText = "방지시설 신규 등록";
+
+    // 3. 삭제 버튼 숨기기 (신규 등록일 땐 삭제가 필요 없으므로)
+    const deleteBtn = document.getElementById('facility-delete-btn');
+    if (deleteBtn) deleteBtn.style.display = "none";
+
+    // 4. 모달 띄우기
+    bootstrap.Modal.getOrCreateInstance(modal).show();
+}
+</script>
+
+<style>
+    .nav-tabs .nav-link { border: none; color: #6c757d; padding: 12px 20px; }
+    .nav-tabs .nav-link.active { border-bottom: 3px solid #0d6efd; color: #0d6efd; background: transparent; }
+    .sticky-top { top: 0; z-index: 10; background: white; }
+    .bg-light-subtle { background-color: #fbfbfb !important; }
+</style>
+{% endblock %}

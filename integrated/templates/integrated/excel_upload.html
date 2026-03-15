@@ -1,0 +1,105 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}환통법 데이터 관리{% endblock %}
+
+{% block content %}
+<style>
+    .custom-modal-overlay {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px);
+        display: none; align-items: center; justify-content: center; z-index: 9999;
+    }
+    .custom-modal-content {
+        background: white; border-radius: 16px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);
+        width: 95%; max-width: 1300px; max-height: 90vh; overflow-y: auto; position: relative;
+    }
+    .status-badge { padding: 4px 12px; border-radius: 20px; font-weight: 600; font-size: 0.8rem; }
+    #loadingOverlay {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(255,255,255,0.8); display: none; flex-direction: column;
+        align-items: center; justify-content: center; z-index: 10000;
+    }
+    .table-responsive { scrollbar-width: thin; }
+</style>
+
+<div class="card border-0 shadow-sm" style="border-radius: 12px;">
+    <div class="card-body p-4">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h4 class="fw-bold mb-1"><i class="bi bi-droplet-half text-info me-2"></i>환통법 측정 데이터 관리</h4>
+                <p class="text-secondary small mb-0">19개 컬럼 표준 양식을 업로드하여 정밀 검증을 수행합니다.</p>
+            </div>
+            <div class="d-flex gap-2">
+                <a href="{% url 'integrated:download_sample' %}" class="btn btn-outline-secondary px-3 shadow-sm">
+                    <i class="bi bi-download me-1"></i> 양식 다운로드
+                </a>
+                <input type="file" id="excelFile" style="display: none;" accept=".xlsx, .xls" onchange="handleFileUpload(this)">
+                <button onclick="document.getElementById('excelFile').click()" class="btn btn-primary px-4 shadow-sm fw-bold">
+                    <i class="bi bi-file-earmark-excel-fill me-2"></i> 데이터 분석 시작
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="loadingOverlay">
+    <div class="spinner-border text-info mb-3" style="width: 3rem; height: 3rem;" role="status"></div>
+    <h6 class="fw-bold text-secondary">데이터 엔진 분석 중...</h6>
+</div>
+
+<div id="sheetModal" class="custom-modal-overlay">
+    <div class="custom-modal-content p-4" style="max-width: 400px;">
+        <h5 class="fw-bold mb-3">시트 선택</h5>
+        <div id="sheetList" class="d-grid gap-2"></div>
+    </div>
+</div>
+
+<div id="validationModal" class="custom-modal-overlay">
+    <div class="custom-modal-content">
+        <div class="p-4 border-bottom d-flex justify-content-between align-items-center bg-light">
+            <div>
+                <h5 class="fw-bold mb-1">상세 검증 리포트</h5>
+                <div id="validationSummary" class="d-flex gap-2"></div>
+            </div>
+            <button onclick="closeModal()" class="btn-close"></button>
+        </div>
+        
+        <div class="p-4">
+            <div id="missingEntries" class="alert alert-warning border-0 shadow-sm mb-4 d-none">
+                <h6 class="fw-bold"><i class="bi bi-exclamation-triangle-fill me-2"></i>필수 항목 누락</h6>
+                <div id="missingList" class="row g-2 small"></div>
+            </div>
+
+            <div class="table-responsive bg-white rounded-3 shadow-sm border">
+                <table class="table table-hover align-middle mb-0" style="font-size: 0.8rem; white-space: nowrap;">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="ps-3 text-center">No</th>
+                            <th>세부라인 방지시설</th>
+                            <th>채취일시/시간</th>
+                            <th>물질</th>
+                            <th class="text-end">농도</th>
+                            <th>풍량/기상</th>
+                            <th>배출량</th>
+                            <th class="text-center pe-3">상태</th>
+                        </tr>
+                    </thead>
+                    <tbody id="validationTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="p-3 border-top d-flex justify-content-end gap-2">
+            <button onclick="closeModal()" class="btn btn-outline-secondary px-4">취소</button>
+            <button onclick="submitFinalData()" class="btn btn-success px-4 fw-bold">데이터 저장</button>
+        </div>
+    </div>
+</div>
+
+<script src="{% static 'js/excel_validator.js' %}"></script>
+<script>
+    function closeModal() { document.getElementById('validationModal').style.display = 'none'; }
+    function closeSheetModal() { document.getElementById('sheetModal').style.display = 'none'; }
+</script>
+{% endblock %}

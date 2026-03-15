@@ -1,0 +1,273 @@
+{% extends 'base.html' %}
+
+{% block title %}대시보드 홈{% endblock %}
+
+{% block content %}
+<div class="card p-5 shadow-sm border-0 mb-4">
+    <h1 class="fw-bold">환영합니다! 👋</h1>
+    <p class="lead text-muted">{{ user.username }}님, 오늘도 좋은 하루 되세요.</p>
+    <hr>
+    
+    <h3 class="fw-bold mb-3">환경그룹 현장간데이</h3>
+    <div class="row row-cols-1 row-cols-md-3 g-4">
+        <div class="col">
+            <div class="card h-100 border-0 shadow-sm bg-primary text-white">
+                <div class="card-body p-4">
+                    <h5 class="card-title fw-bold"><i class="bi bi-file-earmark-bar-graph"></i> 오늘의 할 일</h5>
+                    <p class="card-text opacity-75">3건의 보고서 발송 대기</p>
+                    <a href="{% url 'asset_list' %}" class="btn btn-light btn-sm mt-3">바로가기</a>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card h-100 border-0 shadow-sm bg-info text-white">
+                <div class="card-body p-4">
+                    <h5 class="card-title fw-bold"><i class="bi bi-shield-check"></i> 환경 점검</h5>
+                    <p class="card-text opacity-75">화관법 정기 점검 D-7</p>
+                    <a href="{% url 'chemical_check' %}" class="btn btn-light btn-sm mt-3">확인하기</a>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card h-100 border-0 shadow-sm bg-dark text-white">
+                <div class="card-body p-4">
+                    <h5 class="card-title fw-bold"><i class="bi bi-bell"></i> 공지사항</h5>
+                    <p class="card-text opacity-75">시스템 업데이트가 완료되었습니다.</p>
+                    <a href="#" class="btn btn-outline-light btn-sm mt-3">상세보기</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 p-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="fw-bold mb-0"><i class="bi bi-calendar3 text-primary"></i> 환경그룹 업무 일정</h4>
+        <button class="btn btn-primary btn-sm" onclick="openAddModal()">+ 일정 등록</button>
+    </div>
+    <div id='calendar'></div>
+</div>
+
+<div class="modal fade" id="eventModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold" id="modalTitle">일정 관리</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <input type="hidden" id="eventId">
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">일정 제목</label>
+                    <input type="text" id="eventTitle" class="form-control bg-light border-0" placeholder="제목을 입력하세요">
+                </div>
+                
+                <div class="form-check form-switch mb-3">
+                    <input class="form-check-input" type="checkbox" id="allDayCheck">
+                    <label class="form-check-label small fw-bold" for="allDayCheck">종일 일정으로 설정</label>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col">
+                        <label class="form-label small fw-bold">시작 일시</label>
+                        <input type="datetime-local" id="eventStart" class="form-control bg-light border-0">
+                    </div>
+                    <div class="col">
+                        <label class="form-label small fw-bold">종료 일시</label>
+                        <input type="datetime-local" id="eventEnd" class="form-control bg-light border-0">
+                    </div>
+                </div>
+                <div class="mb-0">
+                    <label class="form-label small fw-bold">상세 내용</label>
+                    <textarea id="eventDesc" class="form-control bg-light border-0" rows="3"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-danger me-auto btn-sm" id="btnDelete" style="display:none;" onclick="ajaxDelete()">삭제</button>
+                <button type="button" class="btn btn-light btn-sm" data-bs-dismiss="modal">취소</button>
+                <button type="button" class="btn btn-primary btn-sm px-4" onclick="ajaxSave()">저장</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<link href='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css' rel='stylesheet' />
+<script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js'></script>
+
+<style>
+    #calendar { max-height: 800px; font-size: 0.9rem; }
+    .fc-header-toolbar { margin-bottom: 1.5rem !important; }
+
+    /* 모든 일정을 바(Bar) 형태로 표시 */
+    .fc-daygrid-event {
+        display: block !important;
+        padding: 3px 6px !important;
+        margin: 1px 2px !important;
+        border-radius: 4px !important;
+        border: none !important;
+        font-size: 0.82rem !important;
+        cursor: pointer;
+    }
+
+    /* 일반 일정 스타일 (에메랄드 그린) */
+    .fc-daygrid-block-event, .fc-daygrid-dot-event {
+        background-color: #4fd1c5 !important;
+        color: #1a202c !important;
+        font-weight: 500 !important;
+    }
+
+    .fc-daygrid-event-dot { display: none !important; }
+
+    /* 패밀리데이 및 공휴일 (빨간색) */
+    .fc-event[style*="background-color: rgb(255, 71, 87)"],
+    .fc-event[style*="background-color:#ff4757"] {
+        background-color: #ff4757 !important;
+        color: white !important;
+    }
+
+    .fc-day-today { background-color: rgba(79, 209, 197, 0.1) !important; }
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var calendarEl = document.getElementById('calendar');
+    var eventModal = new bootstrap.Modal(document.getElementById('eventModal'));
+
+    var calendar = new FullCalendar.Calendar(calendarEl, {
+        initialView: 'dayGridMonth',
+        locale: 'ko',
+        displayEventTime: false,
+        selectable: true,
+        headerToolbar: { 
+            left: 'prev,next today', 
+            center: 'title', 
+            right: 'dayGridMonth,timeGridWeek,listWeek' 
+        },
+        events: '/api/events/',
+
+        select: function(info) {
+            resetModal();
+            // [수정] 기본 날짜 설정 및 종일 체크 해제
+            document.getElementById('allDayCheck').checked = false;
+            updateInputTypes(false);
+            document.getElementById('eventStart').value = info.startStr + "T09:00";
+            document.getElementById('eventEnd').value = info.startStr + "T18:00";
+            document.getElementById('modalTitle').innerText = "새 일정 등록";
+            document.getElementById('btnDelete').style.display = 'none';
+            eventModal.show();
+        },
+
+        eventClick: function(info) {
+            const props = info.event.extendedProps;
+            if (props.is_system) {
+                alert(info.event.title + "\n" + props.description);
+                return;
+            }
+
+            resetModal();
+            document.getElementById('eventId').value = info.event.id;
+            document.getElementById('eventTitle').value = props.original_title || info.event.title;
+            
+            // [추가] 종일 여부 반영
+            const isAllDay = info.event.allDay;
+            document.getElementById('allDayCheck').checked = isAllDay;
+            updateInputTypes(isAllDay);
+
+            if (isAllDay) {
+                document.getElementById('eventStart').value = info.event.startStr;
+                document.getElementById('eventEnd').value = info.event.endStr ? info.event.endStr : info.event.startStr;
+            } else {
+                document.getElementById('eventStart').value = info.event.startStr.substring(0, 16);
+                document.getElementById('eventEnd').value = info.event.endStr ? info.event.endStr.substring(0, 16) : info.event.startStr.substring(0, 16);
+            }
+            
+            document.getElementById('eventDesc').value = props.description || '';
+            document.getElementById('modalTitle').innerText = "일정 관리 (등록자: " + (props.user_name || "알수없음") + ")";
+            document.getElementById('btnDelete').style.display = 'block';
+            eventModal.show();
+        }
+    });
+    calendar.render();
+    
+    window.openAddModal = function() {
+            resetModal(); // 기존 데이터 초기화
+            
+            // 기본값 설정: 오늘 날짜의 업무 시간으로 세팅
+            const today = new Date().toISOString().substring(0, 10);
+            document.getElementById('allDayCheck').checked = false;
+            updateInputTypes(false); // datetime-local 타입으로 설정
+            
+            document.getElementById('eventStart').value = today + "T09:00";
+            document.getElementById('eventEnd').value = today + "T18:00";
+            
+            document.getElementById('modalTitle').innerText = "새 일정 등록";
+            document.getElementById('btnDelete').style.display = 'none'; // 등록 시엔 삭제 버튼 숨김
+            
+            eventModal.show(); // 모달 띄우기
+        };
+    // [추가] 종일 체크박스 이벤트 리스너
+    document.getElementById('allDayCheck').addEventListener('change', function(e) {
+        updateInputTypes(e.target.checked);
+    });
+
+    function updateInputTypes(isAllDay) {
+        const startInput = document.getElementById('eventStart');
+        const endInput = document.getElementById('eventEnd');
+        const currentStart = startInput.value.substring(0, 10);
+        const currentEnd = endInput.value.substring(0, 10);
+
+        if (isAllDay) {
+            startInput.type = "date";
+            endInput.type = "date";
+            startInput.value = currentStart;
+            endInput.value = currentEnd;
+        } else {
+            startInput.type = "datetime-local";
+            endInput.type = "datetime-local";
+            startInput.value = currentStart + "T09:00";
+            endInput.value = currentEnd + "T18:00";
+        }
+    }
+
+    window.ajaxSave = function() {
+        const data = {
+            id: document.getElementById('eventId').value,
+            title: document.getElementById('eventTitle').value,
+            start: document.getElementById('eventStart').value,
+            end: document.getElementById('eventEnd').value,
+            description: document.getElementById('eventDesc').value,
+            all_day: document.getElementById('allDayCheck').checked // [추가] 종일 여부 전송
+        };
+        if(!data.title) return alert("제목을 입력해주세요.");
+        
+        fetch('/api/save-event/', {
+            method: 'POST',
+            body: JSON.stringify(data),
+            headers: {'Content-Type': 'application/json'}
+        }).then(response => {
+            if (response.ok) { location.reload(); } 
+            else { alert("저장에 실패했습니다."); }
+        });
+    };
+
+    window.ajaxDelete = function() {
+        if(confirm("이 일정을 삭제하시겠습니까?")) {
+            fetch('/api/delete-event/', {
+                method: 'POST',
+                body: JSON.stringify({id: document.getElementById('eventId').value}),
+                headers: {'Content-Type': 'application/json'}
+            }).then(() => { location.reload(); });
+        }
+    };
+
+    function resetModal() {
+        document.getElementById('eventId').value = '';
+        document.getElementById('eventTitle').value = '';
+        document.getElementById('eventDesc').value = '';
+        document.getElementById('eventStart').value = '';
+        document.getElementById('eventEnd').value = '';
+        document.getElementById('allDayCheck').checked = false;
+    }
+});
+</script>
+{% endblock %}
