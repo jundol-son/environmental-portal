@@ -257,39 +257,84 @@ function renderValidationModal(data) {
     if (modal) modal.style.display = 'flex';
 }
 
-async function submitFinalData() {
+async function submitFinalData() {  
+    // ---------- 1) 전송할 데이터 수집 ----------  
     const finalData = [];
-    currentResults.forEach((item, idx) => {
+
+    currentResults.forEach((item, idx) => {  
+        // ① 에러가 있거나 설비가 매핑되지 않은 행은 절대 전송하지 않음  
         if (item.status === 'error' || !item.facility_id) return;
-        const select = document.querySelector(`.action-select[data-idx="${idx}"]`);
-        const action = select ? select.value : 'update';
-        if (action === 'update') {
-            finalData.push({
-                facility_id: item.facility_id,
-                substance_id: item.substance_id,
-                date: item.date,
-                value: item.value,
-                extra_data: item.extra_data
-            });
-        }
+
+        // ② UI 에서 “skip” 으로 선택했을 경우 역시 전송 제외  
+        const select = document.querySelector(`.action-select[data-idx="${idx}"]`);  
+        const action = select ? select.value : 'update';  
+        if (action !== 'update') return;   // skip
+
+        // ③ 최종 전송 포맷 (서버가 날짜 문자열을 파싱하므로 그대로 전달)  
+        finalData.push({  
+            facility_id: item.facility_id,  
+            substance_id: item.substance_id,  
+            date: item.date,          // 예: "2025-01-02" 혹은 "20250102"  
+            value: item.value,  
+            extra_data: item.extra_data || {}  
+        });  
     });
 
-    if (finalData.length === 0) return alert("저장할 데이터가 없습니다.");
-    
-    try {
-        const response = await fetch('/integrated/api/save-excel-data/', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
-            body: JSON.stringify({ data: finalData })
+    // ---------- 2) 데이터가 없을 경우 알림 ----------  
+    if (finalData.length === 0) {  
+        alert("저장할 데이터가 없습니다.");  
+        return;  
+    }
+
+    // ---------- 3) 서버에 전송 ----------  
+    try {  
+        const response = await fetch('/integrated/api/save-excel-data/', {  
+            method: 'POST',  
+            headers: {  
+                'Content-Type': 'application/json',  
+                'X-CSRFToken': getCookie('csrftoken')  
+            },  
+            body: JSON.stringify({ data: finalData })  
         });
-        if (response.ok) {
-            alert("성공적으로 저장되었습니다.");
-            location.reload();
-        } else {
-            alert("저장 실패");
-        }
-    } catch (e) { alert("통신 오류 발생"); }
-}
+
+        const result = await response.json();   // <-- 새로운 JSON 구조를 파싱
+
+        // ---------- 4) 성공 / 오류 결과 처리 ----------  
+        if (response.ok && result.status === 'success') {  
+            // 4‑1) 성공 건수와 오류 건수 모두 사용자에게 알림  
+            const msg = `총 ${result.saved_count}건을 저장했습니다.`;  
+            const errMsg = result.error_count > 0  
+                ? `\n※ 오류가 ${result.error_count}건 발생했습니다.\n(콘솔에 상세 내역이 기록됩니다.)`  
+                : '';  
+            alert(msg + errMsg);
+
+            // 4‑2) 오류 상세를 콘솔에 출력 (개발·디버깅용)  
+            if (result.errors && result.errors.length) {  
+                console.groupCollapsed('💡 Excel 저장 오류 상세');  
+                result.errors.forEach(err => {  
+                    console.warn(`Row ${err.row}: ${err.msg}`);  
+                });  
+                console.groupEnd();  
+            }
+
+            // 4‑3) 저장이 정상적으로 진행됐으니 페이지 새로고침  
+            location.reload();  
+        } else {  
+            // 5) API 가 200 이지만 status 가 error 일 경우  
+            const errDetail = result.errors && result.errors.length  
+                ? result.errors.map(e => `Row ${e.row}: ${e.msg}`).join('\n')  
+                : result.message || '알 수 없는 오류';  
+            alert(`저장에 실패했습니다.\n${errDetail}`);
+
+            // 콘솔에도 전체 응답을 남겨 두어 추후 분석이 가능하도록 함  
+            console.error('Excel 저장 API 오류 응답:', result);  
+        }  
+    } catch (e) {  
+        // 6) 네트워크·JS 예외 발생 시  
+        console.error('Excel 저장 중 예외 발생 →', e);  
+        alert('서버와 통신 중 오류가 발생했습니다. 네트워크 상태를 확인하고 다시 시도해주세요.');  
+    }  
+}  
 
 function openSheetModal(sheets) {
     const list = document.getElementById('sheetList');
