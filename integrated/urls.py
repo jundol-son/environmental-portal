@@ -24,4 +24,6 @@ urlpatterns = [
     path('api/save-facility-config/', views.save_facility_config_api, name='save_facility_config'),
     path('api/get-facility-detail/<int:facility_id>/', views.get_facility_detail_api, name='get_facility_detail'),
     path('api/save-facility-detail/', views.save_facility_detail_api, name='save_facility_detail'),    
+    path('api/get-substance-detail/<int:substance_id>/', views.get_substance_detail_api, name='get_substance_detail'),  
+    path('api/save-substance/', views.save_substance_api, name='save_substance'),  
 ]
