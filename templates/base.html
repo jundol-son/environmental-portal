@@ -52,6 +52,32 @@
         .nav-link[aria-expanded="true"] .bi-chevron-down {
             transform: rotate(180deg);
         }        
+        .welcome-text {  
+            display: block;                 /* 블록 요소 → 전체 영역 차지 */  
+            max-width: 100%;                /* 부모 너비를 넘으면 줄바꿈 */  
+            overflow: hidden;               /* 필요 시 잘라내기 */  
+            text-overflow: ellipsis;        /* 넘칠 경우 … 로 표시 */  
+            line-height: 1.4;               /* 가독성을 위한 행 간격 */  
+        }
+
+        /* 부서명 – 절대 줄바꿈 금지 */  
+        .welcome-text .deptname {  
+            white-space: nowrap;            /* 괄호 안·밖을 한 덩어리로 고정 */  
+            color: #e2e8f0;                 /* 비슷한 회색 (선택) */  
+        }
+
+        /* 이름·인사말 – 부서가 줄바꿈될 경우 자동으로 아래에 */  
+        .welcome-text .fullname {  
+            display: block;                 /* 새로운 라인에 배치 */  
+            margin-top: 0.2rem;             /* 부서와 살짝 띄움 */  
+            font-weight: 600;               /* 강조 (필요에 따라) */  
+            color: #fff;                    /* 배경에 대비되는 색 */  
+        }
+
+        /* 작은 화면(모바일)에서는 전체 글씨를 살짝 작게 */  
+        @media (max-width: 480px) {  
+            .welcome-text { font-size: 0.85rem; }  
+        }          
     </style>
 </head>
 <body>
@@ -61,10 +87,18 @@
         </a>
 
         <div class="user-section">
-            {% if user.is_authenticated %}
-                <div class="mb-3 small text-center text-light">
-                    <i class="bi bi-person-circle"></i> 
-                    <strong>{{ user.username }}</strong> 님 로그인 중
+            {% if user.is_authenticated %}  
+                <div class="mb-3 small text-center text-light">  
+                    <i class="bi bi-person-circle"></i>  
+                    <!-- ── 환영 메세지 ── -->  
+                    <strong class="welcome-text">  
+                        <span class="deptname">  
+                            {{ user.sso_profile.deptname }}  
+                        </span>  
+                        <span class="fullname">  
+                            {{ user.sso_profile.full_name }}님 환영합니다.  
+                        </span>  
+                    </strong>  
                 </div>
                 <form action="{% url 'logout' %}" method="post">
                     {% csrf_token %}
@@ -121,18 +155,13 @@
                         
                         <ul class="collapse {% if '/integrated/' in request.path %}show{% endif %} list-unstyled ps-3" id="integratedSubmenu">
                             <li>
-                                <a href="{% url 'integrated:upload_page' %}" class="nav-link small {% if request.resolver_match.url_name == 'upload_page' %}text-info{% else %}text-white-50{% endif %}">
-                                    - 데이터 업로드 및 검증
+                                <a href="{% url 'integrated:dashboard' %}" class="nav-link small {% if request.resolver_match.url_name == 'dashboard' %}text-info{% else %}text-white-50{% endif %}">
+                                    - 월별 이행률 대시보드
                                 </a>
                             </li>
                             <li>
                                 <a href="{% url 'integrated:settings_page' %}" class="nav-link small {% if request.resolver_match.url_name == 'settings_page' %}text-info{% else %}text-white-50{% endif %}">
                                     - 기준 정보 관리
-                                </a>
-                            </li>
-                            <li>
-                                <a href="{% url 'integrated:dashboard' %}" class="nav-link small {% if request.resolver_match.url_name == 'dashboard' %}text-info{% else %}text-white-50{% endif %}">
-                                    - 월별 이행률 대시보드
                                 </a>
                             </li>
                         </ul>
