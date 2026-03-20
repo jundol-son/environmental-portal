@@ -19,20 +19,48 @@ class Facility(models.Model):
     def __str__(self):
         return self.sec
 
-class Substance(models.Model):
+class Substance(models.Model):  
     """측정 물질 및 합격 기준"""
-    OPERATOR_CHOICES = [
-        ('<=', '<='), ('>=', '>='), ('<', '<'), ('>', '>'),
-        ('[]', '[ ] 사이'), ('()', '( ) 사이'),
-    ]
+
     name = models.CharField(max_length=50, verbose_name="물질명", unique=True)
-    operator = models.CharField(max_length=10, choices=OPERATOR_CHOICES, default='<=')
-    val1 = models.FloatField(verbose_name="기준값1")
-    val2 = models.FloatField(verbose_name="기준값2", null=True, blank=True)
+
+    # -- 기존 필드 (필요 없으면 완전히 삭제 가능) --  
+    operator = models.CharField(  
+        max_length=10,  
+        choices=[  
+            ('<=', '<='), ('>=', '>='), ('<', '<'), ('>', '>'),  
+            ('[]', '[ ] 사이'), ('()', '( ) 사이')  
+        ],  
+        default='<=',  
+        blank=True,  
+        null=True,               # ← nullable 로 변경  
+    )  
+    val1 = models.FloatField(  
+        verbose_name="기준값1",  
+        null=True,  
+        blank=True,               # ← nullable 로 변경  
+        default=0                 # 기본값을 줘서 기존 로직이 갑자기 깨지지 않게 함  
+    )  
+    val2 = models.FloatField(  
+        verbose_name="기준값2",  
+        null=True,  
+        blank=True,  
+        default=0  
+    )
+
+    # -- 새 필드 -------------------------------------------------  
+    formula = models.CharField(  
+        max_length=250,  
+        verbose_name="계산식",  
+        help_text="예시: (1*74.92/22.4)*1*60*24/10^6",  
+        default="-"  
+    )  
+    # -----------------------------------------------------------------
+
     unit = models.CharField(max_length=20, verbose_name="단위", default="mg/Sm3")
 
-    def __str__(self):
-        return self.name
+    def __str__(self):  
+        return self.name  
 
 class MeasurementConfig(models.Model):
     """설비별 필수 측정 항목 설정 (엑셀 O표시 정보 매핑)"""
