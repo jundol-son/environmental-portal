@@ -4,7 +4,7 @@ from io import BytesIO
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.http import require_POST
 from django.shortcuts import render, get_object_or_404
-from django.db import transaction
+from django.db import transaction, IntegrityError
 from django.db.models import Max, Q
 from django.utils import timezone
 from .services import ExcelValidationService
@@ -201,31 +201,42 @@ def validate_excel_api(request):
     except Exception as e: return JsonResponse({'error': str(e)}, status=500)
 
 # 4. 최종 데이터 저장 API
-@require_POST
-def save_excel_data_api(request):
-    """최종 데이터 저장 API (상세 에러 트래킹 추가)"""
-    try:
-        body = json.loads(request.body)
+@require_POST  
+def save_excel_data_api(request):  
+    """최종 데이터 저장 API – 성공·오류 정보를 모두 반환"""  
+    try:  
+        body = json.loads(request.body)  
         final_data_list = body.get('data', [])
-        
-        if not final_data_list:
-            return JsonResponse({'status': 'error', 'message': '저장할 데이터가 없습니다.'}, status=400)
-        
-        # 실제 저장을 수행하는 서비스 호출
-        success_count = ExcelValidationService.save_final_data(final_data_list)
-        
-        return JsonResponse({
-            'status': 'success', 
-            'message': f'총 {success_count}건의 데이터가 성공적으로 저장되었습니다.'
-        })
-    except Exception as e:
-        # 콘솔에 상세 에러 출력하여 개발 시 확인 용이하게 함
-        import traceback
-        print(traceback.format_exc())
-        return JsonResponse({
-            'status': 'error', 
-            'message': f'저장 중 서버 오류 발생: {str(e)}'
-        }, status=500)
+
+        if not final_data_list:  
+            return JsonResponse(  
+                {'status': 'error',  
+                 'message': '저장할 데이터가 없습니다.'},  
+                status=400  
+            )
+
+        # 서비스 → (성공 건수, 오류 리스트) 반환  
+        saved_cnt, error_list = ExcelValidationService.save_final_data(final_data_list)
+
+        # ---------- 여기서 필드명을 반드시 saved_count 로 고정 ----------  
+        resp = {  
+            'status': 'success',  
+            'saved_count': saved_cnt,                 # ← 반드시 이 이름  
+            'error_count': len(error_list),  
+            'message': f'총 {saved_cnt}건을 저장했습니다.',  
+            'errors': error_list[:20]                # 필요 시 전체를 반환하거나 페이지네이션  
+        }  
+        return JsonResponse(resp)
+
+    except Exception as e:  
+        import traceback, logging  
+        logging.getLogger('excel_import').error(traceback.format_exc())  
+        return JsonResponse(  
+            {'status': 'error',  
+             'message': f'서버 오류: {str(e)}'},  
+            status=500  
+        )  
+
     
 # 5. 마스터 정보 일괄 임포트 API
 @require_POST
@@ -401,3 +412,57 @@ def download_settings_sample(request):
                 df = pd.DataFrame([sample_row], columns=columns)
             df.to_excel(writer, index=False)
         return HttpResponse(b.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition': 'attachment; filename=Sample.xlsx'})
+
+@require_POST  
+def get_substance_detail_api(request, substance_id):  
+    """수정 모드에서 사용되는 물질 상세 조회 (새 필드 포함)"""  
+    s = get_object_or_404(Substance, id=substance_id)  
+    return JsonResponse({  
+        'id': s.id,  
+        'name': s.name,  
+        'unit': s.unit,  
+        'formula': s.formula,          # ← 추가  
+    })       
+
+@require_POST  
+def save_substance_api(request):  
+    """  
+    - id 가 있으면 수정, 없으면 신규 생성  
+    - UI 에서는 name, unit, formula 만 전달  
+    """  
+    data = json.loads(request.body)
+
+    # ----- 필수값 검사 -----  
+    required = ['name', 'unit', 'formula']  
+    for k in required:  
+        if not data.get(k):  
+            return JsonResponse(  
+                {'error': f'"{k}" 은(는) 필수 입력값입니다.'},  
+                status=400  
+            )
+
+    try:  
+        with transaction.atomic():  
+            if data.get('id'):                     # 수정  
+                sub = Substance.objects.select_for_update().get(id=data['id'])  
+                sub.name = data['name']  
+                sub.unit = data['unit']  
+                sub.formula = data['formula']  
+                sub.save()  
+                msg = '물질이 정상적으로 수정되었습니다.'  
+            else:                                   # 신규  
+                Substance.objects.create(  
+                    name=data['name'],  
+                    unit=data['unit'],  
+                    formula=data['formula']  
+                )  
+                msg = '새 물질이 추가되었습니다.'
+
+        return JsonResponse({'status': 'success', 'message': msg})  
+    except IntegrityError:  
+        return JsonResponse(  
+            {'error': '동일한 물질명이 이미 존재합니다.'},  
+            status=409  
+        )  
+    except Exception as e:  
+        return JsonResponse({'error': str(e)}, status=500)  
