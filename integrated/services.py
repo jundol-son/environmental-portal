@@ -261,6 +261,7 @@ class ExcelValidationService:
                         'wind_speed': extra.get('wind_speed', 0),  
                         'gas_speed': extra.get('gas_speed', 0),  
                         'gas_temp': extra.get('gas_temp', 0),  
+                        'moisture': extra.get('moisture', extra.get('water_content', 0)),
                         'emission_rate': extra.get('emission_rate', 0),  
                         'agency': extra.get('agency', '-'),  
                     }  

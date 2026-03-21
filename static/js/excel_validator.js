@@ -92,7 +92,7 @@ async function openLogEditModal(logId) {
         document.getElementById('edit-log-gas-temp').value = d.gas_temp || 0;
         
         document.getElementById('edit-log-airflow').value = d.airflow || 0;
-        document.getElementById('edit-log-water').value = d.humidity || 0; // 수분함량 필드 매핑
+        document.getElementById('edit-log-water').value = d.moisture || 0;
         document.getElementById('edit-log-emission').value = d.emission_rate || 0;
         document.getElementById('edit-log-agency').value = d.agency || "";
 
@@ -121,7 +121,7 @@ async function saveLogEdit() {
         // 추가된 항목들 (가스속도 등 views.py 수신 대기 항목)
         gas_speed: document.getElementById('edit-log-gas-speed').value,
         gas_temp: document.getElementById('edit-log-gas-temp').value,
-        water_content: document.getElementById('edit-log-water').value
+        moisture: document.getElementById('edit-log-water').value
     };
 
     try {

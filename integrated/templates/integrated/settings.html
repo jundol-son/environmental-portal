@@ -247,33 +247,94 @@
                         <i class="bi bi-plus-lg"></i> 새 물질 추가
                     </button>
                 </div>
+                
                 <div class="table-responsive border rounded bg-white">
                     <table class="table table-hover align-middle mb-0" style="font-size: 0.85rem;">
                         <thead class="table-light">
                             <tr>
                                 <th class="ps-3">물질명</th>
-                                <th class="text-center">계산식</th>  
+                                <th class="text-center">계산식</th>
+                                <th class="text-center">법적구분</th>
+                                <th class="text-center">측정주기</th>
                                 <th class="text-center">관리</th>
                             </tr>
                         </thead>
-                        <tbody>  
-                        {% for s in substances %}  
-                        <tr>  
-                            <td class="ps-3 fw-bold text-primary">{{ s.name }}</td>
-                        
-                            <!-- 계산식 컬럼 : 바로 문자열 출력 -->  
-                            <td class="text-center"><code>{{ s.formula }}</code></td>
-                        
-                            <td class="text-center">  
-                                <button class="btn btn-sm btn-light border"  
-                                        onclick="editItem('substance', '{{ s.id }}')"><i class="bi bi-pencil-square"></i></button>  
-                                <button class="btn btn-sm btn-light border"  
-                                        onclick="deleteItem('substance', '{{ s.id }}')"><i class="bi bi-trash text-danger"></i></button>  
-                            </td>  
-                        </tr>  
-                        {% endfor %}  
-                        </tbody>  
+                        <tbody>
+                            {% for s in substances %}
+                            <tr>
+                                <td class="ps-3 fw-bold text-primary">{{ s.name }}</td>
+                                <td class="text-center"><code>{{ s.formula }}</code></td>
+                                <td class="text-center">
+                                    <span class="badge {% if s.legal_type == '법적' %}bg-danger{% else %}bg-secondary{% endif %}">
+                                        {{ s.legal_type }}
+                                    </span>
+                                </td>
+                                <td class="text-center">{{ s.cycle }}</td>
+                                <td class="text-center">
+                                    <button class="btn btn-sm btn-light border" onclick="editItem('substance', '{{ s.id }}')">
+                                        <i class="bi bi-pencil-square"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-light border" onclick="deleteItem('substance', '{{ s.id }}')">
+                                        <i class="bi bi-trash text-danger"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="5" class="text-center py-4 text-muted">등록된 물질이 없습니다.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
                     </table>
+                </div>
+            </div>
+
+            <div class="modal fade" id="substanceModal" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-lg modal-dialog-centered">
+                    <div class="modal-content border-0 shadow">
+                        <div class="modal-header bg-light">
+                            <h5 class="modal-title fw-bold text-primary" id="substanceModalTitle">새 물질 추가</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body p-4">
+                            <form id="substanceForm">
+                                <input type="hidden" id="substance-id">
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label small fw-bold">물질명 *</label>
+                                        <input type="text" id="substance-name" class="form-control form-control-sm" required>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label small fw-bold">단위 *</label>
+                                        <input type="text" id="substance-unit" class="form-control form-control-sm" value="mg/Sm3" required>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label small fw-bold">법적구분 *</label>
+                                        <select id="substance-legal-type" class="form-select form-select-sm">
+                                            <option value="법적">법적</option>
+                                            <option value="참고">참고</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label small fw-bold">측정주기 *</label>
+                                        <select id="substance-cycle" class="form-select form-select-sm">
+                                            <option value="매월">매월</option>
+                                            <option value="분기">분기</option>
+                                            <option value="반기">반기</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label small fw-bold">계산식 *</label>
+                                        <input type="text" id="substance-formula" class="form-control form-control-sm" required>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                        <div class="modal-footer bg-light">
+                            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">취소</button>
+                            <button type="button" class="btn btn-primary btn-sm px-4" onclick="saveSubstance()">저장</button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -311,51 +372,61 @@
     </div>
 </div>
 
-<!-- ---------- 물질(Master) 추가 / 수정 모달 ---------- -->  
-<!-- ---------- 물질(Master) 추가 / 수정 모달 ---------- -->  
-<div class="modal fade" id="substanceModal" tabindex="-1" aria-hidden="true">  
-    <div class="modal-dialog modal-lg modal-dialog-centered">  
-        <div class="modal-content border-0 shadow">  
-            <div class="modal-header bg-light">  
-                <h5 class="modal-title fw-bold text-primary" id="substanceModalTitle">  
-                    새 물질 추가  
-                </h5>  
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>  
+<div class="modal fade" id="substanceModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-light">
+                <h5 class="modal-title fw-bold text-primary" id="substanceModalTitle">새 물질 추가</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
 
-            <div class="modal-body p-4">  
-                <form id="substanceForm">  
+            <div class="modal-body p-4">
+                <form id="substanceForm">
                     <input type="hidden" id="substance-id">
 
-                    <div class="row g-3">  
-                        <!-- 물질명 -->  
-                        <div class="col-md-6">  
-                            <label class="form-label small fw-bold">물질명 *</label>  
-                            <input type="text" id="substance-name"  
-                                   class="form-control form-control-sm" required>  
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">물질명 *</label>
+                            <input type="text" id="substance-name" class="form-control form-control-sm" required>
                         </div>
 
-                        <!-- 계산식 -->  
-                        <div class="col-md-6">  
-                            <label class="form-label small fw-bold">계산식 *</label>  
-                            <input type="text" id="substance-formula"  
-                                   class="form-control form-control-sm"  
-                                   placeholder="예: (1*74.92/22.4)*1*60*24/10^6"  
-                                   required>  
-                        </div>  
-                    </div>  
-                </form>  
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">단위 *</label>
+                            <input type="text" id="substance-unit" class="form-control form-control-sm" value="mg/Sm3" required>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">법적구분 *</label>
+                            <select id="substance-legal-type" class="form-select form-select-sm">
+                                <option value="법적">법적</option>
+                                <option value="참고">참고</option>
+                            </select>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">측정주기 *</label>
+                            <select id="substance-cycle" class="form-select form-select-sm">
+                                <option value="매월">매월</option>
+                                <option value="분기">분기</option>
+                                <option value="반기">반기</option>
+                            </select>
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label small fw-bold">계산식 *</label>
+                            <input type="text" id="substance-formula" class="form-control form-control-sm" placeholder="예: (1*74.92/22.4)*1*60*24/10^6" required>
+                        </div>
+                    </div>
+                </form>
             </div>
 
-            <div class="modal-footer bg-light py-2">  
-                <button type="button" class="btn btn-secondary btn-sm"  
-                        data-bs-dismiss="modal">취소</button>  
-                <button type="button" class="btn btn-primary btn-sm"  
-                        onclick="saveSubstance()">저장</button>  
-            </div>  
-        </div>  
-    </div>  
-</div>  
+            <div class="modal-footer bg-light py-2">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">취소</button>
+                <button type="button" class="btn btn-primary btn-sm px-4 fw-bold" onclick="saveSubstance()">저장하기</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 
 <script>
@@ -477,72 +548,93 @@ async function saveFacilityConfig() {
     } catch (e) { alert("통신 오류 발생"); }
 }
 
-function editItem(type, id) {  
-    if (type !== 'substance') return;   // 설비·기타는 기존 로직을 사용
+// [수정] 물질 수정/추가 모달 열기 함수
+function editItem(type, id) {
+    if (type !== 'substance') return;
 
-    // 폼 초기화  
-    document.getElementById('substanceForm').reset();  
-    document.getElementById('substance-id').value = '';  
+    // 1. 폼 초기화 (이전 데이터 잔상 제거)
+    const form = document.getElementById('substanceForm');
+    if(form) form.reset();
+    document.getElementById('substance-id').value = '';
     document.getElementById('substanceModalTitle').innerText = '새 물질 추가';
 
-    if (id) {   // ---- 수정 모드 ----  
-        fetch(`/integrated/api/get-substance-detail/${id}/`, {  
-            headers: { 'X-CSRFToken': '{{ csrf_token }}' }  
-        })  
-        .then(r => r.json())  
-        .then(data => {  
-            document.getElementById('substance-id').value   = data.id;  
-            document.getElementById('substance-name').value = data.name;  
-            document.getElementById('substance-formula').value = data.formula;  
-            document.getElementById('substanceModalTitle').innerText = '물질 수정';  
-            bootstrap.Modal.getOrCreateInstance('#substanceModal').show();  
-        })  
-        .catch(() => alert('물질 정보를 불러오는 중 오류가 발생했습니다.'));  
-    } else {  
-        // ---- 추가 모드 ----  
-        bootstrap.Modal.getOrCreateInstance('#substanceModal').show();  
-    }  
-}  
+    if (id) {
+        // 2. 수정 모드: 서버에서 상세 데이터 호출
+        fetch(`/integrated/api/get-substance-detail/${id}/`)
+            .then(res => {
+                if (!res.ok) throw new Error("데이터 호출 실패");
+                return res.json();
+            })
+            .then(data => {
+                // 3. 가져온 데이터를 모달 필드에 바인딩
+                document.getElementById('substance-id').value = data.id;
+                document.getElementById('substance-name').value = data.name;
+                document.getElementById('substance-unit').value = data.unit || 'mg/Sm3';
+                document.getElementById('substance-formula').value = data.formula || '-';
+                
+                // [중요] 추가된 필드 바인딩 (legal_type, cycle)
+                const legalSelect = document.getElementById('substance-legal-type');
+                const cycleSelect = document.getElementById('substance-cycle');
+                
+                if(legalSelect) legalSelect.value = data.legal_type || '법적';
+                if(cycleSelect) cycleSelect.value = data.cycle || '매월';
+
+                document.getElementById('substanceModalTitle').innerText = '물질 정보 수정';
+                
+                // 4. 모달 표시
+                const modalEl = document.getElementById('substanceModal');
+                bootstrap.Modal.getOrCreateInstance(modalEl).show();
+            })
+            .catch(err => {
+                console.error(err);
+                alert("물질 정보를 불러오는 중 오류가 발생했습니다.");
+            });
+    } else {
+        // 5. 추가 모드: 빈 모달 표시
+        const modalEl = document.getElementById('substanceModal');
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    }
+}
 /* -------------------------------------------------  
    2) 물질 저장 (추가 / 수정)  
    -------------------------------------------------*/  
-async function saveSubstance() {  
-    const form = document.getElementById('substanceForm');  
-    if (!form.checkValidity()) {  
-        form.reportValidity();  
-        return;  
-    }
-
-    const payload = {  
-        id: document.getElementById('substance-id').value || null,  
-        name: document.getElementById('substance-name').value.trim(),  
-        unit: '-',                     // 필요 시 UI에 단위 입력란을 추가하고 여기로 전달  
-        formula: document.getElementById('substance-formula').value.trim()  
+// [수정] 물질 저장 함수
+async function saveSubstance() {
+    const payload = {
+        id: document.getElementById('substance-id').value || null,
+        name: document.getElementById('substance-name').value.trim(),
+        unit: document.getElementById('substance-unit').value.trim(),
+        formula: document.getElementById('substance-formula').value.trim(),
+        legal_type: document.getElementById('substance-legal-type').value, // 추가
+        cycle: document.getElementById('substance-cycle').value            // 추가
     };
 
-    try {  
-        const res = await fetch('/integrated/api/save-substance/', {  
-            method: 'POST',  
-            headers: {  
-                'Content-Type': 'application/json',  
-                'X-CSRFToken': '{{ csrf_token }}'  
-            },  
-            body: JSON.stringify(payload)  
+    if (!payload.name) {
+        alert("물질명은 필수입니다.");
+        return;
+    }
+
+    try {
+        const res = await fetch('/integrated/api/save-substance/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}' // 장고 CSRF 토큰 확인
+            },
+            body: JSON.stringify(payload)
         });
 
-        const data = await res.json();
-
-        if (res.ok) {  
-            alert(data.message || '저장되었습니다.');  
-            location.reload();          // 즉시 리스트에 반영  
-        } else {  
-            alert(data.error || '저장에 실패했습니다.');  
-        }  
-    } catch (e) {  
-        console.error(e);  
-        alert('서버와 통신 중 오류가 발생했습니다.');  
-    }  
-}  
+        const result = await res.json();
+        if (res.ok) {
+            alert(result.message || "저장되었습니다.");
+            location.reload(); // 성공 시 새로고침
+        } else {
+            alert("저장 실패: " + (result.error || "알 수 없는 오류"));
+        }
+    } catch (e) {
+        alert("서버 통신 중 오류가 발생했습니다.");
+    }
+}
 // 1. 실시간 테이블 필터 기능
 function filterFacilityTable() {
     const sec = document.getElementById('search-sec').value.toLowerCase();

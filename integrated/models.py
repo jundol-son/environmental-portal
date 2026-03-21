@@ -19,48 +19,25 @@ class Facility(models.Model):
     def __str__(self):
         return self.sec
 
-class Substance(models.Model):  
-    """측정 물질 및 합격 기준"""
-
+class Substance(models.Model):
     name = models.CharField(max_length=50, verbose_name="물질명", unique=True)
-
-    # -- 기존 필드 (필요 없으면 완전히 삭제 가능) --  
-    operator = models.CharField(  
-        max_length=10,  
-        choices=[  
-            ('<=', '<='), ('>=', '>='), ('<', '<'), ('>', '>'),  
-            ('[]', '[ ] 사이'), ('()', '( ) 사이')  
-        ],  
-        default='<=',  
-        blank=True,  
-        null=True,               # ← nullable 로 변경  
-    )  
-    val1 = models.FloatField(  
-        verbose_name="기준값1",  
-        null=True,  
-        blank=True,               # ← nullable 로 변경  
-        default=0                 # 기본값을 줘서 기존 로직이 갑자기 깨지지 않게 함  
-    )  
-    val2 = models.FloatField(  
-        verbose_name="기준값2",  
-        null=True,  
-        blank=True,  
-        default=0  
-    )
-
-    # -- 새 필드 -------------------------------------------------  
-    formula = models.CharField(  
-        max_length=250,  
-        verbose_name="계산식",  
-        help_text="예시: (1*74.92/22.4)*1*60*24/10^6",  
-        default="-"  
-    )  
-    # -----------------------------------------------------------------
-
+    formula = models.CharField(max_length=250, verbose_name="계산식", default="-")
     unit = models.CharField(max_length=20, verbose_name="단위", default="mg/Sm3")
+    
+    # [추가] 법적 구분
+    LEGAL_CHOICES = [('법적', '법적'), ('참고', '참고')]
+    legal_type = models.CharField(max_length=10, choices=LEGAL_CHOICES, default='법적', verbose_name="법적구분")
+    
+    # [추가] 측정 주기
+    CYCLE_CHOICES = [('매월', '매월'), ('분기', '분기'), ('반기', '반기')]
+    cycle = models.CharField(max_length=10, choices=CYCLE_CHOICES, default='매월', verbose_name="측정주기")
 
-    def __str__(self):  
-        return self.name  
+    # 기존 val1, val2는 통합기준관리용 기본값으로 유지하거나 비워둠
+    val1 = models.FloatField(null=True, blank=True, default=0)
+    val2 = models.FloatField(null=True, blank=True, default=0)
+
+    def __str__(self):
+        return self.name
 
 class MeasurementConfig(models.Model):
     """설비별 필수 측정 항목 설정 (엑셀 O표시 정보 매핑)"""

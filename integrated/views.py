@@ -347,7 +347,7 @@ def get_log_detail_api(request, log_id):
         'wind_speed': log.wind_speed or 0,
         'gas_speed': log.gas_speed or 0,
         'gas_temp': log.gas_temp or 0,
-        'water_content': getattr(log, 'water_content', 0), # 필드 안전하게 가져오기
+        'moisture': log.moisture or 0,  # [변경] water_content -> moisture
         'emission_rate': log.emission_rate or 0,
         'agency': log.agency or '',
     })
@@ -358,7 +358,6 @@ def save_log_edit_api(request):
         data = json.loads(request.body)
         log = DailyLog.objects.get(id=data.get('id'))
         
-        # 엑셀의 모든 필드 매핑
         log.date = data.get('date')
         log.sampling_time_text = data.get('sampling_time')
         log.value = data.get('value')
@@ -371,14 +370,13 @@ def save_log_edit_api(request):
         log.wind_speed = data.get('wind_speed')
         log.gas_speed = data.get('gas_speed')
         log.gas_temp = data.get('gas_temp')
-        log.water_content = data.get('water_content') # 모델 필드명 확인 필요
+        log.moisture = data.get('moisture') # [변경] water_content -> moisture
         log.emission_rate = data.get('emission_rate')
         log.agency = data.get('agency')
         log.save()
         return JsonResponse({'status': 'success'})
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
-    
 
 @require_POST
 def delete_log_api(request):
@@ -413,56 +411,50 @@ def download_settings_sample(request):
             df.to_excel(writer, index=False)
         return HttpResponse(b.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition': 'attachment; filename=Sample.xlsx'})
 
-@require_POST  
-def get_substance_detail_api(request, substance_id):  
-    """수정 모드에서 사용되는 물질 상세 조회 (새 필드 포함)"""  
-    s = get_object_or_404(Substance, id=substance_id)  
-    return JsonResponse({  
-        'id': s.id,  
-        'name': s.name,  
-        'unit': s.unit,  
-        'formula': s.formula,          # ← 추가  
-    })       
+def get_substance_detail_api(request, substance_id):
+    s = get_object_or_404(Substance, id=substance_id)
+    return JsonResponse({
+        'id': s.id,
+        'name': s.name,
+        'unit': s.unit,
+        'formula': s.formula,
+        'legal_type': s.legal_type, # 추가
+        'cycle': s.cycle,           # 추가
+    })     
 
 @require_POST  
 def save_substance_api(request):  
-    """  
-    - id 가 있으면 수정, 없으면 신규 생성  
-    - UI 에서는 name, unit, formula 만 전달  
-    """  
     data = json.loads(request.body)
 
-    # ----- 필수값 검사 -----  
-    required = ['name', 'unit', 'formula']  
+    # [수정] 필수값 검사 (name, unit, formula, legal_type, cycle 모두 포함)
+    required = ['name', 'unit', 'formula', 'legal_type', 'cycle']  
     for k in required:  
         if not data.get(k):  
-            return JsonResponse(  
-                {'error': f'"{k}" 은(는) 필수 입력값입니다.'},  
-                status=400  
-            )
+            return JsonResponse({'error': f'"{k}" 필드는 필수입니다.'}, status=400)
 
     try:  
         with transaction.atomic():  
-            if data.get('id'):                     # 수정  
+            if data.get('id'): # 수정 모드
                 sub = Substance.objects.select_for_update().get(id=data['id'])  
                 sub.name = data['name']  
                 sub.unit = data['unit']  
                 sub.formula = data['formula']  
+                sub.legal_type = data['legal_type']
+                sub.cycle = data['cycle']
                 sub.save()  
-                msg = '물질이 정상적으로 수정되었습니다.'  
-            else:                                   # 신규  
+                msg = '물질 정보가 정상적으로 수정되었습니다.'  
+            else: # 신규 등록 모드
                 Substance.objects.create(  
                     name=data['name'],  
                     unit=data['unit'],  
-                    formula=data['formula']  
+                    formula=data['formula'],
+                    legal_type=data['legal_type'],
+                    cycle=data['cycle']
                 )  
                 msg = '새 물질이 추가되었습니다.'
 
         return JsonResponse({'status': 'success', 'message': msg})  
-    except IntegrityError:  
-        return JsonResponse(  
-            {'error': '동일한 물질명이 이미 존재합니다.'},  
-            status=409  
-        )  
+    except IntegrityError:  # 중복 이름 방지
+        return JsonResponse({'error': '동일한 물질명이 이미 존재합니다.'}, status=409)  
     except Exception as e:  
         return JsonResponse({'error': str(e)}, status=500)  
