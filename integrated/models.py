@@ -15,6 +15,8 @@ class Facility(models.Model):
     tms_yn = models.CharField(max_length=10, verbose_name="TMS", default="X")
     status = models.CharField(max_length=20, verbose_name="운영/폐쇄", default="운영")
     diameter = models.CharField(max_length=50, verbose_name="직경", null=True, blank=True)
+    capacity_ncmm = models.FloatField(verbose_name="용량(NCMM)", default=0, null=True, blank=True) # 추가
+    capacity_acmm = models.FloatField(verbose_name="용량(ACMM)", default=0, null=True, blank=True)
 
     def __str__(self):
         return self.sec
@@ -56,7 +58,8 @@ class MeasurementConfig(models.Model):
 class DailyLog(models.Model):
     """측정 데이터 로그 (상세 컬럼 포함)"""
     facility = models.ForeignKey(Facility, on_delete=models.CASCADE)
-    substance = models.ForeignKey(Substance, on_delete=models.CASCADE)
+    substance = models.ForeignKey(Substance, on_delete=models.SET_NULL, null=True, blank=True)
+    raw_substance_name = models.CharField(max_length=100, null=True, blank=True, verbose_name="엑셀입력물질명")
     date = models.DateField(verbose_name="채취일자")
     
     # 엑셀 상세 컬럼 데이터
@@ -79,5 +82,33 @@ class DailyLog(models.Model):
     moisture = models.FloatField(null=True, blank=True)
     emission_rate = models.FloatField(null=True, blank=True)
 
+    # --- [수정 핵심] BooleanField를 CharField로 교체 ---
+    # 선택지 정의 (정상, 사내초과, 법적초과)
+    STATUS_CHOICES = [
+        ('정상', '정상'),
+        ('사내초과', '사내초과'),
+        ('법적초과', '법적초과'),
+    ]
+
+    substance_status = models.CharField(
+        max_length=20, 
+        default='정상', 
+        choices=STATUS_CHOICES,
+        verbose_name="농도상태"
+    )
+    
+    airflow_status = models.CharField(
+        max_length=20, 
+        default='정상', 
+        choices=STATUS_CHOICES,
+        verbose_name="풍량상태"
+    )
+
+    # 제출용 여부는 여부 확인이므로 Boolean 유지
+    is_report_data = models.BooleanField(default=False, verbose_name="제출용여부")
+
     class Meta:
         unique_together = ('facility', 'substance', 'date')
+        indexes = [
+            models.Index(fields=['date', 'facility', 'substance']),
+        ]

@@ -197,83 +197,158 @@ class ExcelValidationService:
     # -----------------------------------------------------------------  
     # 5️⃣ 최종 데이터 저장 (날짜 파싱 강화 & 오류 누적)  
     # -----------------------------------------------------------------  
-    @staticmethod  
-    @transaction.atomic  
-    def save_final_data(data_list):  
-        """  
-        프론트엔드에서 전달된 data 리스트를 DB에 저장합니다.  
-        - 날짜 문자열/객체를 모두 지원합니다.  
-        - 파싱·검증 실패 행은 `errors` 에 기록하고 전체 저장을 계속합니다.  
-        반환값: (성공 건수, 오류 리스트)  
-        """  
-        saved_count = 0  
-        errors = []                         # 실패 행을 모으는 리스트
+    @staticmethod
+    def calculate_log_status(facility, substance, value, air_flow):
+        """농도 및 풍량 상태 자동 계산 로직"""
+        # 1. 농도 초과 판별
+        is_legal = (substance.val2 is not None and value > substance.val2)
+        is_internal = (substance.val1 is not None and value > substance.val1)
 
-        for idx, item in enumerate(data_list, start=1):  
-            # ---------- 1) FK 확보 ----------  
-            try:  
-                facility = Facility.objects.get(id=item['facility_id'])  
-                substance = Substance.objects.get(id=item['substance_id'])  
-            except Facility.DoesNotExist:  
-                errors.append({  
-                    'row': idx,  
-                    'msg': f"설비(ID={item.get('facility_id')}) 가 존재하지 않습니다."  
-                })  
-                continue  
-            except Substance.DoesNotExist:  
-                errors.append({  
-                    'row': idx,  
-                    'msg': f"물질(ID={item.get('substance_id')}) 가 존재하지 않습니다."  
-                })  
-                continue
+        # 2. 풍량 초과 판별 (NCMM, ACMM 중 큰 값 기준)
+        ncmm = facility.capacity_ncmm or 0
+        acmm = facility.capacity_acmm or 0
+        max_capacity = max(ncmm, acmm)
+        
+        airflow_status = 'normal'
+        if max_capacity > 0:
+            if air_flow > max_capacity:
+                airflow_status = 'legal'    # 용량 초과 (법적)
+            elif air_flow > (max_capacity * 0.9):
+                airflow_status = 'internal' # 90% 초과 (사내)
 
-            # ---------- 2) 날짜 파싱 ----------  
-            date_obj = ExcelValidationService._parse_date(item.get('date'))  
-            if not date_obj:  
-                errors.append({  
-                    'row': idx,  
-                    'msg': f"날짜 형식 오류 → '{item.get('date')}'"  
-                })  
-                continue
+        return is_legal, is_internal, airflow_status    
+    @staticmethod
+    @transaction.atomic
+    def save_final_data(data_list):
+        """
+        데이터 저장 시 다음 항목을 자동 처리합니다:
+        1. 물질 미등록 시: substance=None, substance_status='참고', raw_substance_name 저장
+        2. 농도 상태 판별 (정상, 사내초과, 법적초과)
+        3. 풍량 상태 판별 (정상, 사내초과, 법적초과) - 90%/100% 로직
+        4. 배출량 자동 계산 (수식 존재 시 계산, 미등록 물질은 엑셀값 유지)
+        5. 제출용 데이터(is_report_data) 최신화
+        """
+        saved_count = 0
+        errors = []
+        # (시설ID, 물질ID 혹은 0, 년, 월)
+        affected_groups = set() 
 
-            # ---------- 3) collection_month 문자열 생성 ----------  
-            month_str = f"{date_obj.month}월"
+        for idx, item in enumerate(data_list, start=1):
+            try:
+                # ---------- 1) 객체 및 기본값 확보 ----------
+                facility = Facility.objects.get(id=item['facility_id'])
+                
+                # 물질 식별 (없을 경우 None 반환)
+                substance_id = item.get('substance_id')
+                substance = Substance.objects.filter(id=substance_id).first() if substance_id else None
+                
+                date_obj = ExcelValidationService._parse_date(item.get('date'))
+                if not date_obj:
+                    errors.append({'row': idx, 'msg': f"날짜 형식 오류: {item.get('date')}"})
+                    continue
 
-            # ---------- 4) 추가 데이터 ----------  
-            extra = item.get('extra_data', {})
+                value = float(item.get('value', 0))
+                extra = item.get('extra_data', {})
+                air_flow = float(extra.get('air_flow', 0))
+                month_str = f"{date_obj.month}월"
 
-            # ---------- 5) DB 저장 ----------  
-            try:  
-                DailyLog.objects.update_or_create(  
-                    facility=facility,  
-                    substance=substance,  
-                    date=date_obj,  
-                    defaults={  
-                        'collection_month': month_str,  
-                        'sampling_time_text': extra.get('sampling_time_text', ''),  
-                        'value': item.get('value', 0),  
-                        'air_flow': extra.get('air_flow', 0),  
-                        'weather': extra.get('weather', ''),  
-                        'temp': extra.get('temp', 0),  
-                        'humidity': extra.get('humidity', 0),  
-                        'pressure': extra.get('pressure', 0),  
-                        'wind_dir': extra.get('wind_dir', ''),  
-                        'wind_speed': extra.get('wind_speed', 0),  
-                        'gas_speed': extra.get('gas_speed', 0),  
-                        'gas_temp': extra.get('gas_temp', 0),  
-                        'moisture': extra.get('moisture', extra.get('water_content', 0)),
-                        'emission_rate': extra.get('emission_rate', 0),  
-                        'agency': extra.get('agency', '-'),  
-                    }  
-                )  
-                saved_count += 1  
-            except Exception as e:  
-                errors.append({  
-                    'row': idx,  
-                    'msg': f"DB 저장 오류: {str(e)}",  
-                    'data': item  
-                })  
-                # continue – 이 레코드만 스킵하고 나머지는 진행
+                # ---------- 2) 농도 상태 판별 (물질 미등록 시 '참고') ----------
+                sub_status = '정상'
+                if substance:
+                    if substance.val2 is not None and value > substance.val2:
+                        sub_status = '법적초과'
+                    elif substance.val1 is not None and value > substance.val1:
+                        sub_status = '사내초과'
+                else:
+                    sub_status = '참고' # 물질 마스터에 없을 때
+
+                # ---------- 3) 풍량 상태 판별 (90% 사내, 100% 법적) ----------
+                ncmm = facility.capacity_ncmm or 0
+                acmm = facility.capacity_acmm or 0
+                max_capa = max(ncmm, acmm)
+                
+                af_status = '정상'
+                if max_capa > 0:
+                    if air_flow > max_capa:
+                        af_status = '법적초과'
+                    elif air_flow > (max_capa * 0.9):
+                        af_status = '사내초과'
+
+                # ---------- 4) 배출량 자동 계산 ----------
+                final_emission_rate = 0
+                raw_formula = substance.formula.strip() if (substance and substance.formula) else ""
+                
+                if substance and raw_formula and raw_formula != "-":
+                    try:
+                        safe_formula = raw_formula.replace('^', '**')
+                        formula_factor = eval(safe_formula, {"__builtins__": None}, {})
+                        final_emission_rate = round(formula_factor * value * air_flow, 4)
+                    except:
+                        final_emission_rate = float(extra.get('emission_rate', 0))
+                else:
+                    # 물질이 없거나 수식이 없으면 엑셀에 적힌 값 그대로 사용
+                    final_emission_rate = float(extra.get('emission_rate', 0))
+
+                # ---------- 5) DB 저장 ----------
+                # 물질이 없을 경우 unique_together ('facility', 'substance', 'date') 충돌 방지를 위해 
+                # 필터 조건을 주의 깊게 설정해야 합니다. (substance=None 대응)
+                
+                update_fields = {
+                    'collection_month': month_str,
+                    'raw_substance_name': item.get('substance_name'),
+                    'sampling_time_text': extra.get('sampling_time_text', ''),
+                    'value': value,
+                    'air_flow': air_flow,
+                    'substance_status': sub_status,
+                    'airflow_status': af_status,
+                    'emission_rate': final_emission_rate,
+                    'weather': extra.get('weather', ''),
+                    'temp': extra.get('temp', 0),
+                    'humidity': extra.get('humidity', 0),
+                    'pressure': extra.get('pressure', 0),
+                    'wind_dir': extra.get('wind_dir', ''),
+                    'wind_speed': extra.get('wind_speed', 0),
+                    'gas_speed': extra.get('gas_speed', 0),
+                    'gas_temp': extra.get('gas_temp', 0),
+                    'moisture': extra.get('moisture', 0),
+                    'agency': extra.get('agency', '-'),
+                }
+
+                obj, created = DailyLog.objects.update_or_create(
+                    facility=facility,
+                    substance=substance, # None 일 수 있음
+                    date=date_obj,
+                    defaults=update_fields
+                )
+                
+                # 갱신 그룹에 추가 (substance가 None이면 0으로 처리하여 관리)
+                s_key = substance.id if substance else 0
+                affected_groups.add((facility.id, s_key, date_obj.year, month_str))
+                saved_count += 1
+
+            except Exception as e:
+                errors.append({'row': idx, 'msg': f"저장 중 오류 발생: {str(e)}"})
+
+        # ---------- 6) 제출용 데이터(is_report_data) 플래그 갱신 ----------
+        for f_id, s_id, year, m_str in affected_groups:
+            # 필터 조건 설정 (ID 0은 None을 의미)
+            filter_kwargs = {
+                'facility_id': f_id,
+                'date__year': year,
+                'collection_month': m_str
+            }
+            if s_id == 0:
+                filter_kwargs['substance__isnull'] = True
+            else:
+                filter_kwargs['substance_id'] = s_id
+
+            # 해당 그룹 초기화 후 최신 데이터 마킹
+            DailyLog.objects.filter(**filter_kwargs).update(is_report_data=False)
+            
+            latest = DailyLog.objects.filter(**filter_kwargs).order_by('-date', '-id').first()
+            if latest:
+                latest.is_report_data = True
+                latest.save()
 
         return saved_count, errors
 
@@ -405,3 +480,29 @@ class ExcelValidationService:
                 }  
             )  
         return len(df)  
+
+
+    def refresh_report_data_flag(facility, substance, year, month):
+        """해당 월의 마지막 측정건을 제출용(is_report_data)으로 마킹"""
+        month_str = f"{month}월"
+        
+        # 1. 해당 월/시설/물질에 대한 모든 데이터의 제출 플래그 초기화
+        DailyLog.objects.filter(
+            facility=facility, 
+            substance=substance, 
+            date__year=year, 
+            collection_month=month_str
+        ).update(is_report_data=False) # <--- .update() 앞에 괄호 닫기 확인!
+
+        # 2. 날짜가 가장 늦은(최신) 데이터 하나만 찾기
+        # 날짜가 같을 경우를 대비해 id 역순(-id)도 추가하는 것이 안전합니다.
+        latest_log = DailyLog.objects.filter(
+            facility=facility, 
+            substance=substance, 
+            date__year=year, 
+            collection_month=month_str
+        ).order_by('-date', '-id').first()
+
+        if latest_log:
+            latest_log.is_report_data = True
+            latest_log.save()

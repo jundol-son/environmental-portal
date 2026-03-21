@@ -134,38 +134,68 @@
                     <table id="facility-master-table" class="table table-hover align-middle mb-0" style="font-size: 0.78rem; white-space: nowrap;">
                         <thead class="table-dark sticky-top">
                             <tr>
-                                <th class="ps-3">세부라인 방지시설(SEC)</th>
-                                <th>시설번호</th>
-                                <th>방지시설번호</th>
-                                <th>업체번호</th> <th>사업장</th>
-                                <th>라인</th>
-                                <th>배기</th>
-                                <th>용량</th>
-                                <th class="text-center">TMS</th>
+                                <th class="ps-3" style="width: 40px;">
+                                    <input type="checkbox" id="check-all-facility" onclick="toggleAllFacility(this)">
+                                </th>
+                                <th>세부라인 방지시설(SEC)</th>
+                                <th>시설번호 / 방지번호</th> <th>사업장 / 라인 / 배기</th> <th>용량</th> <th>용량(NCMM / ACMM)</th> <th class="text-center">TMS</th>
                                 <th class="text-center">상태</th>
-                                <th class="pe-3">직경(mm)</th> </tr>
+                                <th class="pe-3">직경(mm)</th>
+                            </tr>
                         </thead>
                         <tbody>
                             {% for row in matrix_data %}
-                            <tr style="cursor: pointer;" onclick="openFacilityDetailModal('{{ row.facility.id }}')">
-                                <td class="ps-3 fw-bold text-primary cell-sec">{{ row.facility.sec }}</td>
-                                <td>{{ row.facility.facility_no|default:"-" }}</td>
-                                <td>{{ row.facility.prevent_no|default:"-" }}</td>
-                                <td>{{ row.facility.company_no|default:"-" }}</td> <td class="cell-workplace">{{ row.facility.workplace|default:"-" }}</td>
-                                <td class="cell-line">{{ row.facility.line|default:"-" }}</td>
-                                <td class="cell-exhaust">{{ row.facility.exhaust|default:"-" }}</td>
-                                <td>{{ row.facility.capacity|default:"-" }}</td>
-                                <td class="text-center">
-                                    <span class="badge {% if row.facility.tms_yn == 'O' %}bg-info{% else %}bg-light text-muted border{% endif %}">{{ row.facility.tms_yn|default:"X" }}</span>
+                            <tr style="cursor: pointer;">
+                                <td class="ps-3" onclick="event.stopPropagation();">
+                                    <input type="checkbox" class="facility-check" value="{{ row.facility.id }}">
                                 </td>
-                                <td class="text-center cell-status">
-                                    <span class="badge {% if row.facility.status == '운영' %}bg-success-subtle text-success{% else %}bg-danger-subtle text-danger{% endif %}">{{ row.facility.status|default:"운영" }}</span>
+                                <td class="fw-bold text-primary cell-sec" onclick="openFacilityDetailModal('{{ row.facility.id }}')">
+                                    {{ row.facility.sec }}
                                 </td>
-                                <td class="pe-3">{{ row.facility.diameter|default:"-" }}</td>
+                                <td onclick="openFacilityDetailModal('{{ row.facility.id }}')">
+                                    <div class="fw-bold">{{ row.facility.facility_no|default:"-" }}</div>
+                                    <div class="text-muted small">{{ row.facility.prevent_no|default:"-" }}</div>
+                                </td>
+                                <td onclick="openFacilityDetailModal('{{ row.facility.id }}')">
+                                    <div class="cell-workplace">{{ row.facility.workplace|default:"-" }}</div>
+                                    <div class="small text-muted">
+                                        <span class="cell-line">{{ row.facility.line|default:"-" }}</span> / 
+                                        <span class="cell-exhaust">{{ row.facility.exhaust|default:"-" }}</span>
+                                    </div>
+                                </td>
+                                <td onclick="openFacilityDetailModal('{{ row.facility.id }}')">
+                                    <div class="fw-bold">{{ row.facility.facility_capacity|default:"-" }}</div>
+                                </td>
+                                <td onclick="openFacilityDetailModal('{{ row.facility.id }}')">
+                                    <span class="badge bg-light text-dark border">N: {{ row.facility.capacity_ncmm|default:"0" }}</span>
+                                    <span class="badge bg-light text-dark border">A: {{ row.facility.capacity_acmm|default:"0" }}</span>
+                                </td>
+                                <td class="text-center" onclick="openFacilityDetailModal('{{ row.facility.id }}')">
+                                    <span class="badge {% if row.facility.tms_yn == 'O' %}bg-info{% else %}bg-light text-muted border{% endif %}">
+                                        {{ row.facility.tms_yn|default:"X" }}
+                                    </span>
+                                </td>
+                                <td class="text-center cell-status" onclick="openFacilityDetailModal('{{ row.facility.id }}')">
+                                    <span class="badge {% if row.facility.status == '운영' %}bg-success-subtle text-success{% else %}bg-danger-subtle text-danger{% endif %}">
+                                        {{ row.facility.status|default:"운영" }}
+                                    </span>
+                                </td>
+                                <td class="pe-3" onclick="openFacilityDetailModal('{{ row.facility.id }}')">
+                                    {{ row.facility.diameter|default:"-" }}
+                                </td>
                             </tr>
                             {% endfor %}
                         </tbody>
                     </table>
+                </div>
+
+                <div class="d-flex justify-content-between align-items-center mt-3">
+                    <button class="btn btn-outline-danger btn-sm" onclick="deleteCheckedFacilities()">
+                        <i class="bi bi-trash me-1"></i> 선택 설비 일괄 삭제
+                    </button>
+                    <div class="text-muted small">
+                        * 설비명을 클릭하면 상세 정보를 수정할 수 있습니다.
+                    </div>
                 </div>
             </div>
 
@@ -228,6 +258,14 @@
                                         <option value="운영">운영</option>
                                         <option value="폐쇄">폐쇄</option>
                                     </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-bold">용량 (NCMM)</label>
+                                    <input type="number" step="any" id="edit-f-capacity-ncmm" class="form-control form-control-sm">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-bold">용량 (ACMM)</label>
+                                    <input type="number" step="any" id="edit-f-capacity-acmm" class="form-control form-control-sm">
                                 </div>
                             </div>
                         </div>
@@ -430,6 +468,25 @@
 
 
 <script>
+// 0. 헬퍼: 현재 활성 탭을 포함하여 페이지 새로고침
+function reloadWithActiveTab() {
+    const activeTabEl = document.querySelector('#settingsTab .nav-link.active');
+    const activeTabId = activeTabEl ? activeTabEl.getAttribute('data-bs-target').substring(1) : 'tab-matrix';
+    window.location.href = `${window.location.pathname}?tab=${activeTabId}`;
+}
+
+// 페이지 로드 시 URL 파라미터에 맞는 탭 표시
+document.addEventListener('DOMContentLoaded', function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tabParam = urlParams.get('tab');
+    if (tabParam) {
+        const tabToActivate = document.querySelector(`[data-bs-target="#${tabParam}"]`);
+        if (tabToActivate) {
+            bootstrap.Tab.getOrCreateInstance(tabToActivate).show();
+        }
+    }
+});
+
 // 1. 공통 데이터 처리
 function getCookie(name) {
     let cookieValue = null;
@@ -461,7 +518,7 @@ async function importMasterData(type, input) {
         });
         const data = await res.json();
         alert(data.message);
-        location.reload();
+        reloadWithActiveTab();
     } catch (e) { alert("통신 오류 발생"); }
 }
 
@@ -476,7 +533,7 @@ async function deleteItem(type, id) {
             body: formData,
             headers: { 'X-CSRFToken': '{{ csrf_token }}' }
         });
-        location.reload();
+        reloadWithActiveTab();
     } catch (e) { alert("삭제 실패"); }
 }
 
@@ -543,7 +600,7 @@ async function saveFacilityConfig() {
             body: JSON.stringify({ facility_id: currentEditingFacilityId, items: items })
         });
         const result = await res.json();
-        if (res.ok) location.reload();
+        if (res.ok) reloadWithActiveTab();
         else alert("오류: " + result.message);
     } catch (e) { alert("통신 오류 발생"); }
 }
@@ -627,7 +684,7 @@ async function saveSubstance() {
         const result = await res.json();
         if (res.ok) {
             alert(result.message || "저장되었습니다.");
-            location.reload(); // 성공 시 새로고침
+            reloadWithActiveTab();
         } else {
             alert("저장 실패: " + (result.error || "알 수 없는 오류"));
         }
@@ -708,6 +765,8 @@ async function saveFacilityDetail() {
         diameter: getVal('edit-f-diameter'),    // [추가] 누락되었던 직경 필드 반영
         tms_yn: getVal('edit-f-tms'),
         status: getVal('edit-f-status'),
+        capacity_ncmm: getVal('edit-f-capacity-ncmm'),
+        capacity_acmm: getVal('edit-f-capacity-acmm'),
     };
 
     console.log("저장 시도 데이터:", data); // 디버깅용
@@ -739,8 +798,7 @@ async function saveFacilityDetail() {
         
         if (res.ok) {
             alert(result.message || "정보가 성공적으로 저장되었습니다.");
-            // 현재 보고 있던 '설비 마스터 관리' 탭으로 돌아가기 위해 파라미터 유지하며 새로고침
-            window.location.href = window.location.pathname + "?tab=tab-facility";
+            reloadWithActiveTab();
         } else {
             alert("저장 실패: " + (result.message || "서버 응답 오류"));
         }
@@ -786,6 +844,48 @@ function openNewFacilityModal() {
 
     // 4. 모달 띄우기
     bootstrap.Modal.getOrCreateInstance(modal).show();
+}
+// 전체 선택/해제
+function toggleAllFacility(source) {
+    const checkboxes = document.querySelectorAll('.facility-check');
+    checkboxes.forEach(cb => cb.checked = source.checked);
+}
+
+// 일괄 삭제 실행
+async function deleteCheckedFacilities() {
+    const checked = document.querySelectorAll('.facility-check:checked');
+    const ids = Array.from(checked).map(cb => cb.value);
+
+    if (ids.length === 0) {
+        alert("삭제할 설비를 선택해주세요.");
+        return;
+    }
+
+    if (!confirm(`선택한 ${ids.length}개의 설비를 삭제하시겠습니까?\n관련된 모든 측정 데이터가 함께 삭제됩니다.`)) return;
+
+    const res = await fetch('/integrated/api/delete-selected/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+        body: JSON.stringify({ type: 'facility', ids: ids })
+    });
+
+    const result = await res.json();
+    if (res.ok) {
+        alert(result.message);
+        reloadWithActiveTab();
+    } else {
+        alert("삭제 실패: " + result.message);
+    }
+}
+function toggleAllFacility(source) {
+    const checkboxes = document.querySelectorAll('.facility-check');
+    checkboxes.forEach(cb => {
+        cb.checked = source.checked;
+        // 선택 시 행 하이라이트 효과 (선택 사항)
+        const row = cb.closest('tr');
+        if (source.checked) row.classList.add('table-active');
+        else row.classList.remove('table-active');
+    });
 }
 </script>
 

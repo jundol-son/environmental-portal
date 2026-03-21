@@ -26,4 +26,5 @@ urlpatterns = [
     path('api/save-facility-detail/', views.save_facility_detail_api, name='save_facility_detail'),    
     path('api/get-substance-detail/<int:substance_id>/', views.get_substance_detail_api, name='get_substance_detail'),  
     path('api/save-substance/', views.save_substance_api, name='save_substance'),  
+    path('api/delete-selected/', views.delete_selected_items_api, name='delete_selected'),
 ]

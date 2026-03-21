@@ -1,7 +1,6 @@
 let currentFile = null;
 let currentResults = [];
 
-// 1. 장고 보안 CSRF 토큰 획득
 function getCookie(name) {
     let cookieValue = null;
     if (document.cookie && document.cookie !== '') {
@@ -17,16 +16,169 @@ function getCookie(name) {
     return cookieValue;
 }
 
-// 2. UI 제어 유틸리티
 function toggleDisplay(id, displayType) {
     const el = document.getElementById(id);
     if (el) el.style.display = displayType;
 }
 
 function closeModal() { toggleDisplay('validationModal', 'none'); }
-function closeSheetModal() { toggleDisplay('sheetModal', 'none'); }
 
-// 3. 대시보드 메인 로직: 실시간 필터링
+// 8. 상세 수정 모달 (None 방지 및 필드 매핑)
+async function openLogEditModal(logId) {
+    if(!logId) return;
+    try {
+        const res = await fetch(`/integrated/api/get-log-detail/${logId}/`);
+        if(!res.ok) throw new Error("데이터 응답 오류");
+        const d = await res.json();
+        
+        // 상단 정보 및 기준치 표시
+        document.getElementById('display-log-info').innerHTML = `<i class="bi bi-info-circle me-1"></i> ${d.facility_sec} <span class="text-secondary ms-2">[${d.substance_name}]</span>`;
+        document.getElementById('display-log-limits').innerText = `농도기준: ${d.sub_val1} / ${d.sub_val2} | 설계용량: ${d.capa_max}`;
+        
+        // 폼 필드 채우기 (?? 0 연산자로 null 시 0 표시 - 4번 해결)
+        document.getElementById('edit-log-id').value = d.id;
+        document.getElementById('edit-log-date').value = d.date;
+        document.getElementById('edit-log-time').value = d.sampling_time || "";
+        document.getElementById('edit-log-value').value = d.value || 0;
+        document.getElementById('edit-log-airflow').value = d.airflow || 0;
+        document.getElementById('edit-log-weather').value = d.weather || "";
+        document.getElementById('edit-log-temp').value = d.temp || 0;
+        document.getElementById('edit-log-humidity').value = d.humidity || 0;
+        document.getElementById('edit-log-pressure').value = d.pressure || 0;
+        document.getElementById('edit-log-wind-dir').value = d.wind_dir || "";
+        document.getElementById('edit-log-wind-speed').value = d.wind_speed || 0;
+        document.getElementById('edit-log-gas-speed').value = d.gas_speed || 0;
+        document.getElementById('edit-log-gas-temp').value = d.gas_temp || 0;
+        document.getElementById('edit-log-water').value = d.moisture || 0;
+        document.getElementById('edit-log-emission').value = d.emission_rate || 0;
+        document.getElementById('edit-log-agency').value = d.agency || "";
+        document.getElementById('edit-log-report').value = d.is_report_data ? "true" : "false";
+
+        new bootstrap.Modal(document.getElementById('logEditModal')).show();
+    } catch (e) {
+        alert("데이터 로드 중 오류가 발생했습니다.");
+    }
+}
+
+async function saveLogEdit() {
+    const data = {
+        id: document.getElementById('edit-log-id').value,
+        date: document.getElementById('edit-log-date').value,
+        sampling_time: document.getElementById('edit-log-time').value,
+        value: document.getElementById('edit-log-value').value,
+        airflow: document.getElementById('edit-log-airflow').value,
+        weather: document.getElementById('edit-log-weather').value,
+        temp: document.getElementById('edit-log-temp').value,
+        humidity: document.getElementById('edit-log-humidity').value,
+        pressure: document.getElementById('edit-log-pressure').value,
+        wind_dir: document.getElementById('edit-log-wind-dir').value,
+        wind_speed: document.getElementById('edit-log-wind-speed').value,
+        gas_speed: document.getElementById('edit-log-gas-speed').value,
+        gas_temp: document.getElementById('edit-log-gas-temp').value,
+        moisture: document.getElementById('edit-log-water').value,
+        agency: document.getElementById('edit-log-agency').value,
+        is_report_data: document.getElementById('edit-log-report').value === "true"
+    };
+
+    const res = await fetch('/integrated/api/save-log-edit/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+        body: JSON.stringify(data)
+    });
+    if (res.ok) { alert("저장되었습니다."); location.reload(); }
+    else { alert("저장 실패"); }
+}
+
+async function handleFileUpload(input) {
+    if (!input.files || !input.files[0]) return;
+    currentFile = input.files[0];
+    toggleDisplay('loadingOverlay', 'flex');
+    const formData = new FormData();
+    formData.append('file', currentFile);
+    try {
+        const response = await fetch('/integrated/api/validate-excel/', {
+            method: 'POST', body: formData, headers: { 'X-CSRFToken': getCookie('csrftoken') }
+        });
+        const data = await response.json();
+        toggleDisplay('loadingOverlay', 'none');
+        currentResults = data.results || [];
+        renderValidationModal(data);
+    } catch (e) {
+        toggleDisplay('loadingOverlay', 'none');
+        alert("업로드 처리 오류");
+    }
+}
+
+function renderValidationModal(data) {
+    const tbody = document.getElementById('validationTableBody');
+    const summaryDiv = document.getElementById('validationSummary');
+    const s = data.summary || {total:0, success:0, warning:0, error:0};
+    const saveableCount = (s.success || 0) + (s.warning || 0);
+    const errorCount = s.error || 0;
+
+    summaryDiv.innerHTML = `
+        <span class="badge bg-secondary p-2 me-1">전체 ${s.total || 0}건</span> 
+        <span class="badge bg-success p-2 me-1">저장가능 ${saveableCount}건</span> 
+        <span class="badge bg-danger p-2">오류(저장불가) ${errorCount}건</span>`;
+    tbody.innerHTML = '';
+    (data.results || []).forEach(item => {
+        const tr = document.createElement('tr');
+        if(item.status === 'error') {
+            tr.className = 'table-danger';
+        } else if (item.status === 'warning') {
+            tr.className = 'table-warning';
+        }
+
+        const renderStatus = (status) => {
+            if (status === '법적초과') return `<span class="text-danger fw-bold">${status}</span>`;
+            if (status === '사내초과') return `<span class="text-warning fw-bold">${status}</span>`;
+            return status || '-'; // null/undefined 경우 '-' 표시
+        };
+
+        tr.innerHTML = `
+            <td>${item.row}</td>
+            <td>${item.facility_name}</td>
+            <td>${item.substance_name}</td>
+            <td>${item.value}</td>
+            <td>${renderStatus(item.legal_ref_status)}</td>
+            <td>${renderStatus(item.conc_status)}</td>
+            <td>${renderStatus(item.af_status)}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+    toggleDisplay('validationModal', 'flex');
+}
+
+async function submitFinalData() {
+    const finalData = currentResults.filter(i => i.status !== 'error' && i.facility_id).map(i => ({
+        facility_id: i.facility_id, 
+        substance_id: i.substance_id, 
+        substance_name: i.substance_name, // 미등록 물질명 보존을 위해 추가 (6번 해결)
+        date: i.date, 
+        value: i.value, 
+        extra_data: i.extra_data
+    }));
+    if(!finalData.length) { alert("저장할 수 있는 유효한 데이터가 없습니다."); return; }
+    const res = await fetch('/integrated/api/save-excel-data/', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+        body: JSON.stringify({ data: finalData })
+    });
+    if (res.ok) location.reload();
+}
+
+function toggleAllLogs(source) { document.querySelectorAll('.log-check').forEach(cb => cb.checked = source.checked); }
+
+async function deleteCheckedLogs() {
+    const ids = Array.from(document.querySelectorAll('.log-check:checked')).map(cb => cb.value);
+    if (!ids.length || !confirm("삭제하시겠습니까?")) return;
+    const res = await fetch('/integrated/api/delete-selected/', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+        body: JSON.stringify({ type: 'log', ids: ids })
+    });
+    if (res.ok) location.reload();
+}
+
+// 필터링 함수가 dataset을 참조하도록 보강
 function filterLogTable() {
     const fVal = document.getElementById('filter-facility').value.toLowerCase().trim();
     const lVal = document.getElementById('filter-line').value.toLowerCase().trim();
@@ -37,7 +189,6 @@ function filterLogTable() {
     const rows = document.querySelectorAll('#logTable tbody tr');
     
     rows.forEach(row => {
-        // data- 속성에서 값을 직접 추출
         const sec = (row.dataset.sec || "").toLowerCase();
         const line = (row.dataset.line || "").toLowerCase();
         const substance = (row.dataset.substance || "").toLowerCase();
@@ -49,12 +200,13 @@ function filterLogTable() {
         const matchSubstance = substance.includes(sVal);
         const matchAgency = agency.includes(aVal);
         
-        let matchExceed = false;
-        if (eVal === "") matchExceed = true;
-        else if (eVal === "초과") matchExceed = status.includes("초과");
-        else matchExceed = (status === eVal);
+        let matchExceed = (eVal === "") || (status === eVal);
 
-        row.style.display = (matchFacility && matchLine && matchSubstance && matchAgency && matchExceed) ? "" : "none";
+        if (matchFacility && matchLine && matchSubstance && matchAgency && matchExceed) {
+            row.style.display = "";
+        } else {
+            row.style.display = "none";
+        }
     });
 }
 
@@ -64,308 +216,4 @@ function resetLogFilter() {
         if (el) el.value = "";
     });
     filterLogTable();
-}
-
-async function openLogEditModal(logId) {
-    if(!logId) return;
-    try {
-        const res = await fetch(`/integrated/api/get-log-detail/${logId}/`);
-        if(!res.ok) throw new Error("데이터 조회 실패");
-        const d = await res.json();
-        
-        // 데이터 매핑 (HTML ID와 d 객체 필드명 일치 확인)
-        document.getElementById('edit-log-id').value = d.id;
-        document.getElementById('display-log-info').innerText = `${d.facility_sec} [${d.substance_name}]`;
-        
-        document.getElementById('edit-log-date').value = d.date;
-        document.getElementById('edit-log-time').value = d.sampling_time || "";
-        document.getElementById('edit-log-value').value = d.value;
-        
-        document.getElementById('edit-log-weather').value = d.weather || "";
-        document.getElementById('edit-log-temp').value = d.temp || 0;
-        document.getElementById('edit-log-humidity').value = d.humidity || 0;
-        document.getElementById('edit-log-pressure').value = d.pressure || 0;
-        
-        document.getElementById('edit-log-wind-dir').value = d.wind_dir || "";
-        document.getElementById('edit-log-wind-speed').value = d.wind_speed || 0;
-        document.getElementById('edit-log-gas-speed').value = d.gas_speed || 0; // views.py에 맞춰 추가 필요시 대응
-        document.getElementById('edit-log-gas-temp').value = d.gas_temp || 0;
-        
-        document.getElementById('edit-log-airflow').value = d.airflow || 0;
-        document.getElementById('edit-log-water').value = d.moisture || 0;
-        document.getElementById('edit-log-emission').value = d.emission_rate || 0;
-        document.getElementById('edit-log-agency').value = d.agency || "";
-
-        const modalEl = document.getElementById('logEditModal');
-        bootstrap.Modal.getOrCreateInstance(modalEl).show();
-    } catch (e) {
-        alert("데이터를 불러오는 중 에러가 발생했습니다.");
-    }
-}
-
-async function saveLogEdit() {
-    const data = {
-        id: document.getElementById('edit-log-id').value,
-        date: document.getElementById('edit-log-date').value,
-        sampling_time: document.getElementById('edit-log-time').value,
-        value: document.getElementById('edit-log-value').value,
-        weather: document.getElementById('edit-log-weather').value,
-        temp: document.getElementById('edit-log-temp').value,
-        humidity: document.getElementById('edit-log-humidity').value,
-        pressure: document.getElementById('edit-log-pressure').value,
-        wind_dir: document.getElementById('edit-log-wind-dir').value,
-        wind_speed: document.getElementById('edit-log-wind-speed').value,
-        airflow: document.getElementById('edit-log-airflow').value,
-        emission_rate: document.getElementById('edit-log-emission').value,
-        agency: document.getElementById('edit-log-agency').value,
-        // 추가된 항목들 (가스속도 등 views.py 수신 대기 항목)
-        gas_speed: document.getElementById('edit-log-gas-speed').value,
-        gas_temp: document.getElementById('edit-log-gas-temp').value,
-        moisture: document.getElementById('edit-log-water').value
-    };
-
-    try {
-        const res = await fetch('/integrated/api/save-log-edit/', {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json', 
-                'X-CSRFToken': getCookie('csrftoken') 
-            },
-            body: JSON.stringify(data)
-        });
-
-        if (res.ok) {
-            alert("저장되었습니다.");
-            location.reload();
-        } else {
-            alert("저장 실패");
-        }
-    } catch (e) {
-        alert("통신 오류 발생");
-    }
-}
-
-async function deleteLogData() {
-    const id = document.getElementById('edit-log-id').value;
-    if(!confirm("이 측정 데이터를 삭제하시겠습니까?")) return;
-    
-    const res = await fetch('/integrated/api/delete-log/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
-        body: JSON.stringify({ id: id })
-    });
-    if (res.ok) location.reload();
-}
-
-// 5. 엑셀 파일 업로드 및 유효성 검사 로직
-async function handleFileUpload(input) {
-    if (!input.files || !input.files[0]) return;
-    currentFile = input.files[0];
-    toggleDisplay('loadingOverlay', 'flex');
-
-    const formData = new FormData();
-    formData.append('file', currentFile);
-
-    try {
-        const response = await fetch('/integrated/api/validate-excel/', {
-            method: 'POST',
-            body: formData,
-            headers: { 'X-CSRFToken': getCookie('csrftoken') }
-        });
-        const data = await response.json();
-        toggleDisplay('loadingOverlay', 'none');
-
-        if (data.requires_sheet_selection) {
-            openSheetModal(data.sheets);
-        } else {
-            currentResults = data.results || [];
-            renderValidationModal(data);
-        }
-    } catch (error) {
-        toggleDisplay('loadingOverlay', 'none');
-        alert("분석 중 오류가 발생했습니다.");
-    }
-}
-
-/**
- * 엑셀 분석 결과를 표(Table) 형식으로 모달에 렌더링합니다.
- * 누락 알림 대신 업로드된 개별 행의 초과 여부와 설비 정보를 보여줍니다.
- */
-function renderValidationModal(data) {
-    const tbody = document.getElementById('validationTableBody');
-    const summaryDiv = document.getElementById('validationSummary');
-    
-    // 1. 상단 요약 정보 업데이트 (전체/정상/초과/에러)
-    const s = data.summary || {total:0, success:0, exceed:0, error:0};
-    summaryDiv.innerHTML = `
-        <span class="badge bg-secondary p-2">전체 ${s.total}건</span>
-        <span class="badge bg-success p-2">정상 ${s.success}건</span>
-        <span class="badge bg-danger p-2">기준초과 ${s.exceed}건</span>
-        <span class="badge bg-warning text-dark p-2">입력오류 ${s.error}건</span>
-    `;
-
-    // 2. 테이블 데이터 렌더링
-    tbody.innerHTML = '';
-    const results = data.results || [];
-    
-    results.forEach(item => {
-        const tr = document.createElement('tr');
-        const extra = item.extra_data || {};
-        
-        // 상태별 배지 및 스타일 결정
-        let statusBadge = '';
-        let rowClass = '';
-        let valueClass = 'text-primary';
-
-        if(item.status === 'success') {
-            statusBadge = `<span class="badge bg-success-subtle text-success">정상</span>`;
-        } else if(item.status === 'warning') {
-            statusBadge = `<span class="badge bg-warning-subtle text-warning">사내초과</span>`;
-            rowClass = 'table-warning-light';
-        } else if(item.status === 'danger') {
-            statusBadge = `<span class="badge bg-danger">법적초과</span>`;
-            rowClass = 'table-danger-light';
-            valueClass = 'text-danger';
-        } else {
-            statusBadge = `<span class="badge bg-dark">설비오류</span>`;
-            rowClass = 'table-light';
-        }
-
-        tr.className = rowClass;
-        tr.innerHTML = `
-            <td class="text-center text-muted small">${item.row}</td>
-            <td><strong>${item.facility_name || '미등록'}</strong></td>
-            <td>${item.date}</td>
-            <td><span class="badge border text-dark bg-white fw-normal">${item.substance_name}</span></td>
-            <td class="text-end fw-bold ${valueClass}">${item.value}</td>
-            <td>
-                <small class="d-block">풍량: ${extra.air_flow || '0'}</small>
-                <small class="text-muted">${extra.weather || '-'} / ${extra.temp || '0'}℃</small>
-            </td>
-            <td class="text-end text-info fw-bold">${extra.emission_rate || '0'}</td>
-            <td class="text-center">${statusBadge}<br><small class="text-muted" style="font-size:0.7rem;">${item.msg}</small></td>
-        `;
-        tbody.appendChild(tr);
-    });
-
-    // 미측정 항목 알림창은 이제 필요 없으므로 숨김 처리 (또는 HTML에서 제거)
-    const missingDiv = document.getElementById('missingEntries');
-    if(missingDiv) missingDiv.classList.add('d-none');
-
-    // 모달 표시
-    const modal = document.getElementById('validationModal');
-    if (modal) modal.style.display = 'flex';
-}
-
-async function submitFinalData() {  
-    // ---------- 1) 전송할 데이터 수집 ----------  
-    const finalData = [];
-
-    currentResults.forEach((item, idx) => {  
-        // ① 에러가 있거나 설비가 매핑되지 않은 행은 절대 전송하지 않음  
-        if (item.status === 'error' || !item.facility_id) return;
-
-        // ② UI 에서 “skip” 으로 선택했을 경우 역시 전송 제외  
-        const select = document.querySelector(`.action-select[data-idx="${idx}"]`);  
-        const action = select ? select.value : 'update';  
-        if (action !== 'update') return;   // skip
-
-        // ③ 최종 전송 포맷 (서버가 날짜 문자열을 파싱하므로 그대로 전달)  
-        finalData.push({  
-            facility_id: item.facility_id,  
-            substance_id: item.substance_id,  
-            date: item.date,          // 예: "2025-01-02" 혹은 "20250102"  
-            value: item.value,  
-            extra_data: item.extra_data || {}  
-        });  
-    });
-
-    // ---------- 2) 데이터가 없을 경우 알림 ----------  
-    if (finalData.length === 0) {  
-        alert("저장할 데이터가 없습니다.");  
-        return;  
-    }
-
-    // ---------- 3) 서버에 전송 ----------  
-    try {  
-        const response = await fetch('/integrated/api/save-excel-data/', {  
-            method: 'POST',  
-            headers: {  
-                'Content-Type': 'application/json',  
-                'X-CSRFToken': getCookie('csrftoken')  
-            },  
-            body: JSON.stringify({ data: finalData })  
-        });
-
-        const result = await response.json();   // <-- 새로운 JSON 구조를 파싱
-
-        // ---------- 4) 성공 / 오류 결과 처리 ----------  
-        if (response.ok && result.status === 'success') {  
-            // 4‑1) 성공 건수와 오류 건수 모두 사용자에게 알림  
-            const msg = `총 ${result.saved_count}건을 저장했습니다.`;  
-            const errMsg = result.error_count > 0  
-                ? `\n※ 오류가 ${result.error_count}건 발생했습니다.\n(콘솔에 상세 내역이 기록됩니다.)`  
-                : '';  
-            alert(msg + errMsg);
-
-            // 4‑2) 오류 상세를 콘솔에 출력 (개발·디버깅용)  
-            if (result.errors && result.errors.length) {  
-                console.groupCollapsed('💡 Excel 저장 오류 상세');  
-                result.errors.forEach(err => {  
-                    console.warn(`Row ${err.row}: ${err.msg}`);  
-                });  
-                console.groupEnd();  
-            }
-
-            // 4‑3) 저장이 정상적으로 진행됐으니 페이지 새로고침  
-            location.reload();  
-        } else {  
-            // 5) API 가 200 이지만 status 가 error 일 경우  
-            const errDetail = result.errors && result.errors.length  
-                ? result.errors.map(e => `Row ${e.row}: ${e.msg}`).join('\n')  
-                : result.message || '알 수 없는 오류';  
-            alert(`저장에 실패했습니다.\n${errDetail}`);
-
-            // 콘솔에도 전체 응답을 남겨 두어 추후 분석이 가능하도록 함  
-            console.error('Excel 저장 API 오류 응답:', result);  
-        }  
-    } catch (e) {  
-        // 6) 네트워크·JS 예외 발생 시  
-        console.error('Excel 저장 중 예외 발생 →', e);  
-        alert('서버와 통신 중 오류가 발생했습니다. 네트워크 상태를 확인하고 다시 시도해주세요.');  
-    }  
-}  
-
-function openSheetModal(sheets) {
-    const list = document.getElementById('sheetList');
-    if(list) {
-        list.innerHTML = sheets.map(s => `
-            <button class="btn btn-outline-primary text-start p-3 mb-2 shadow-sm d-flex justify-content-between" onclick="validateWithSheet('${s}')">
-                ${s} <i class="bi bi-chevron-right"></i>
-            </button>`).join('');
-    }
-    toggleDisplay('sheetModal', 'flex');
-}
-
-async function validateWithSheet(sheetName) {
-    closeSheetModal();
-    toggleDisplay('loadingOverlay', 'flex');
-    const formData = new FormData();
-    formData.append('file', currentFile);
-    formData.append('sheet_name', sheetName);
-
-    try {
-        const response = await fetch('/integrated/api/validate-excel/', {
-            method: 'POST',
-            body: formData,
-            headers: { 'X-CSRFToken': getCookie('csrftoken') }
-        });
-        const data = await response.json();
-        toggleDisplay('loadingOverlay', 'none');
-        currentResults = data.results || [];
-        renderValidationModal(data);
-    } catch (error) {
-        toggleDisplay('loadingOverlay', 'none');
-        alert("시트 분석 오류");
-    }
 }

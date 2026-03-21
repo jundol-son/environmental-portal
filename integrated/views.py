@@ -10,93 +10,161 @@ from django.utils import timezone
 from .services import ExcelValidationService
 from .models import Facility, Substance, MeasurementConfig, DailyLog
 
-# 1. 통합 대시보드 (업로드 기능 통합 및 중복 측정 체크)
+# 1. 통합 대시보드 (탭 3종 데이터 가공 및 필터 통합)
+# dashboard_page 함수만 업데이트 하거나 전체 교체하세요.
 def dashboard_page(request):
-    """선택한 년/월 기준 이행률 대시보드 및 상세 분석"""
+    """탭별 필터링과 활성 탭 상태 유지를 반영한 대시보드 뷰"""
     now = timezone.now()
     selected_year = request.GET.get('year', str(now.year))
     selected_month = request.GET.get('month', str(now.month))
+    selected_substances = request.GET.getlist('substances')
+    active_tab = request.GET.get('tab', 'summary-content')
     month_str = f"{selected_month}월"
+    selected_year_int = int(selected_year)
+    selected_month_int = int(selected_month)
 
-    # A. 상세 로그 데이터 (테이블 출력용)
-    logs = DailyLog.objects.filter(
+    # 1. 공통 쿼리셋 및 기본 변수
+    all_substances = Substance.objects.all().order_by('name')
+    logs_qs = DailyLog.objects.filter(
         collection_month=month_str,
         date__year=selected_year 
-    ).select_related('facility', 'substance').order_by('-date', 'facility__sec')
-
-    # B. 필수 측정 항목 대비 현황 분석
-    configs = MeasurementConfig.objects.select_related('facility', 'substance').all()
+    ).select_related('facility', 'substance')
     
-    compliance_report = []      # 누락(미측정) 항목 담기
-    completed_logs_detail = []  # 측정 완료 상세 담기
-    
-    counts = {
-        'total': configs.count(),
-        'completed': 0,
-        'normal': 0,
-        'internal_exceed': 0,
-        'legal_exceed': 0      
-    }
+    # "법적" 항목 중 "제출용" 데이터만 필터링하기 위한 기준 설정
+    legal_configs = MeasurementConfig.objects.select_related('substance').filter(substance__legal_type='법적')
 
-    for config in configs:
-        measured_logs = DailyLog.objects.filter(
-            facility=config.facility,
-            substance=config.substance,
-            collection_month=month_str,
-            date__year=selected_year
+    # 2. 연간 이행률 계산 (법적, 제출용 기준)
+    annual_total_required = 0
+    annual_completed_count = 0
+    cycle_to_count = {'매월': 12, '분기': 4, '반기': 2}
+
+    for config in legal_configs:
+        required_count = cycle_to_count.get(config.substance.cycle)
+        if not required_count:
+            continue
+        annual_total_required += required_count
+
+        logs_for_year = DailyLog.objects.filter(
+            facility=config.facility, substance=config.substance,
+            date__year=selected_year_int, is_report_data=True
         )
-        
-        log_count = measured_logs.count()
-        
-        if log_count > 0:
-            counts['completed'] += 1
-            max_val_log = measured_logs.order_by('-value').first()
-            val = max_val_log.value
+
+        if config.substance.cycle == '매월':
+            annual_completed_count += logs_for_year.values('date__month').distinct().count()
+        elif config.substance.cycle == '분기':
+            q1 = logs_for_year.filter(date__month__in=[1, 2, 3]).exists()
+            q2 = logs_for_year.filter(date__month__in=[4, 5, 6]).exists()
+            q3 = logs_for_year.filter(date__month__in=[7, 8, 9]).exists()
+            q4 = logs_for_year.filter(date__month__in=[10, 11, 12]).exists()
+            annual_completed_count += sum([q1, q2, q3, q4])
+        elif config.substance.cycle == '반기':
+            h1 = logs_for_year.filter(date__month__in=range(1, 7)).exists()
+            h2 = logs_for_year.filter(date__month__in=range(7, 13)).exists()
+            annual_completed_count += sum([h1, h2])
             
-            if config.substance.val2 and val > config.substance.val2:
-                status_tag, status_cls = "법적초과", "text-danger fw-bold"
-                counts['legal_exceed'] += 1
-            elif val > config.substance.val1:
-                status_tag, status_cls = "사내초과", "text-warning fw-bold"
-                counts['internal_exceed'] += 1
+    annual_completion_rate = round((annual_completed_count / annual_total_required * 100), 1) if annual_total_required > 0 else 0
+
+    # 3. 당월 측정 현황 계산 (법적, 제출용 기준)
+    due_this_month = {
+        'total': 0, 'completed': 0, 'normal': 0, 'internal_exceed': 0, 'legal_exceed': 0,
+        'missing_list': [], 'completed_list': []
+    }
+    
+    current_quarter = (selected_month_int - 1) // 3 + 1
+    quarter_months = range(current_quarter * 3 - 2, current_quarter * 3 + 1)
+    current_half = 1 if selected_month_int <= 6 else 2
+    half_year_months = range(1, 7) if current_half == 1 else range(7, 13)
+
+    for config in legal_configs:
+        cycle = config.substance.cycle
+        
+        if cycle == '매월':
+            due_this_month['total'] += 1
+            log = DailyLog.objects.filter(
+                facility=config.facility, substance=config.substance,
+                date__year=selected_year_int, date__month=selected_month_int,
+                is_report_data=True
+            ).order_by('-value').first()
+            
+            if log:
+                due_this_month['completed'] += 1
+                status = log.substance_status
+                if status == '정상': due_this_month['normal'] += 1
+                elif status == '사내초과': due_this_month['internal_exceed'] += 1
+                elif status == '법적초과': due_this_month['legal_exceed'] += 1
+                due_this_month['completed_list'].append({'config': config, 'log': log})
             else:
-                status_tag, status_cls = "정상", "text-success"
-                counts['normal'] += 1
+                due_this_month['missing_list'].append({'config': config})
 
-            completed_logs_detail.append({
-                'facility_sec': config.facility.sec,
-                'facility_no': config.facility.facility_no,
-                'substance_name': config.substance.name,
-                'value': val,
-                'status_tag': status_tag,
-                'status_cls': status_cls,
-                'log_count': log_count
-            })
-        else:
-            compliance_report.append({
-                'facility_sec': config.facility.sec,
-                'facility_no': config.facility.facility_no,
-                'substance_name': config.substance.name,
-                'status_text': '미측정(누락)',
-                'status_class': 'text-danger fw-bold'
-            })
+        elif cycle == '분기' and selected_month_int % 3 == 0:
+            is_measured = DailyLog.objects.filter(
+                facility=config.facility, substance=config.substance,
+                date__year=selected_year_int, date__month__in=quarter_months,
+                is_report_data=True
+            ).exists()
+            if not is_measured:
+                due_this_month['total'] += 1
+                due_this_month['missing_list'].append({'config': config})
+        
+        elif cycle == '반기' and selected_month_int % 6 == 0:
+            is_measured = DailyLog.objects.filter(
+                facility=config.facility, substance=config.substance,
+                date__year=selected_year_int, date__month__in=half_year_months,
+                is_report_data=True
+            ).exists()
+            if not is_measured:
+                due_this_month['total'] += 1
+                due_this_month['missing_list'].append({'config': config})
 
-    completion_rate = round((counts['completed'] / counts['total'] * 100), 1) if counts['total'] > 0 else 0
+    due_this_month['missing_count'] = len(due_this_month['missing_list'])
+    due_this_month['completion_rate'] = round((due_this_month['completed'] / due_this_month['total'] * 100), 1) if due_this_month['total'] > 0 else 0
 
-    return render(request, 'integrated/dashboard.html', {
-        'logs': logs,
+    # 4. 차트 데이터 가공
+    chart_qs = logs_qs
+    if selected_substances:
+        chart_qs = chart_qs.filter(Q(substance__name__in=selected_substances) | Q(raw_substance_name__in=selected_substances))
+    chart_data = {}
+    lines = chart_qs.values_list('facility__line', flat=True).distinct()
+    for line in lines:
+        line_name = line if line else "라인 미지정"
+        line_logs = chart_qs.filter(facility__line=line).order_by('facility__sec')
+        if line_logs.exists():
+            chart_data[line_name] = {
+                'labels': [log.facility.sec for log in line_logs],
+                'values_scatter': [{'x': log.facility.sec, 'y': log.value} for log in line_logs],
+                'legal_line': [{'x': log.facility.sec, 'y': log.substance.val2 if log.substance else 0} for log in line_logs],
+                'internal_line': [{'x': log.facility.sec, 'y': log.substance.val1 if log.substance else 0} for log in line_logs],
+            }
+            
+    # 5. 레거시 통계 (UI에서 제거되어 계산 불필요)
+    # UI가 복구될 경우 이 부분도 '제출용' 기준으로 재계산 필요
+    compliance_report = []
+    completed_logs_detail = []
+    counts = {'total': 0, 'completed': 0, 'normal': 0, 'internal_exceed': 0, 'legal_exceed': 0}
+
+    context = {
+        'logs': logs_qs.order_by('-date'),
+        'all_substances': all_substances,
+        'selected_substances': selected_substances,
+        'selected_year': selected_year,
+        'selected_month': selected_month,
+        'year_range': range(now.year, now.year - 5, -1),
+        'month_range': range(1, 13),
+        'chart_data': chart_data,
+        'active_tab': active_tab,
+
+        'annual_total_required': annual_total_required,
+        'annual_completion_rate': annual_completion_rate,
+        'due_this_month': due_this_month,
+        
+        # 레거시 데이터 (호환성 유지)
         'compliance_report': compliance_report,
         'completed_logs_detail': completed_logs_detail,
         'counts': counts,
-        'selected_year': selected_year,
-        'selected_month': selected_month,
-        'completion_rate': completion_rate,
-        'total_required': counts['total'],
         'completed_count': counts['completed'],
-        'missing_count': counts['total'] - counts['completed'],
-        'year_range': range(now.year, now.year - 5, -1),
-        'month_range': range(1, 13)
-    })
+        'missing_count': max(0, counts['total'] - counts['completed']),
+    }
+    return render(request, 'integrated/dashboard.html', context)
 
 # 2. 기준 정보 설정 페이지
 def settings_page(request):
@@ -110,135 +178,107 @@ def settings_page(request):
         row = {'facility': f, 'substance_status': []}
         for s in substances:
             is_active = (f.id, s.id) in active_configs
-            row['substance_status'].append({
-                'is_active': is_active,
-                'val1': s.val1 if is_active else '-',
-                'val2': s.val2 if is_active else '-'
-            })
+            row['substance_status'].append({'is_active': is_active, 'val1': s.val1 if is_active else '-', 'val2': s.val2 if is_active else '-'})
         matrix_data.append(row)
     return render(request, 'integrated/settings.html', {'substances': substances, 'matrix_data': matrix_data})
 
-# 3. [핵심 업데이트] 엑셀 데이터 분석/검증 API (4중 식별 + 행별 기준 체크)
+# 3. 엑셀 데이터 분석/검증 API (데이터 유실 방지 강화)
 @require_POST
 def validate_excel_api(request):
     excel_file = request.FILES.get('file')
-    sheet_name = request.POST.get('sheet_name')
     if not excel_file: return JsonResponse({'error': '파일이 없습니다.'}, status=400)
-    all_sheets = ExcelValidationService.get_sheet_names(excel_file)
-    target_sheet = sheet_name if sheet_name else all_sheets[0]
     
     try:
-        df = pd.read_excel(excel_file, sheet_name=target_sheet)
+        df = pd.read_excel(excel_file)
         results = []
-        summary = {'total': 0, 'success': 0, 'exceed': 0, 'error': 0}
+        summary = {'total': 0, 'success': 0, 'warning': 0, 'error': 0}
 
         for index, row in df.iterrows():
             summary['total'] += 1
-            raw_facility = str(row.get('라인 방지시설(SEC)', row.get('세부라인 방지시설', ''))).strip()
-            raw_substance = str(row.get('물질', '')).strip()
-            try:
-                value = float(row.get('농도', 0))
-            except:
-                value = 0
+            raw_f = str(row.get('라인 방지시설(SEC)', row.get('세부라인 방지시설', ''))).strip()
+            raw_s = str(row.get('물질', '')).strip()
             
-            # 1. 설비 식별 (4종 번호 매칭)
-            facility = Facility.objects.filter(
-                Q(sec__iexact=raw_facility) | Q(facility_no__iexact=raw_facility) | 
-                Q(prevent_no__iexact=raw_facility) | Q(company_no__iexact=raw_facility)
-            ).first()
-            
-            # 2. 물질 식별 (포함 검색을 더 정교하게 하여 기준치가 있는 Substance 매칭)
+            facility = Facility.objects.filter(Q(sec__iexact=raw_f) | Q(facility_no__iexact=raw_f)).first()
             substance = Substance.objects.filter(
-                Q(name__iexact=raw_substance) | Q(name__icontains=raw_substance)
+                Q(name__iexact=raw_s) | Q(name__icontains=raw_s)
             ).first()
             
+            try: val = float(row.get('농도', 0))
+            except: val = 0
+            try: af = float(row.get('풍량', 0))
+            except: af = 0
+
+            extra = {
+                'sampling_time_text': str(row.get('채취시간', '')),
+                'air_flow': af,
+                'weather': str(row.get('날씨', '')),
+                'temp': row.get('기온', 0),
+                'humidity': row.get('습도', 0),
+                'pressure': row.get('대기압', 0),
+                'wind_dir': str(row.get('풍향', '')),
+                'wind_speed': row.get('풍속', 0),
+                'gas_speed': row.get('가스속도m/s', row.get('가스속도(m/s)', 0)),
+                'gas_temp': row.get('가스온도', row.get('가스온도(℃)', 0)),
+                'moisture': row.get('수분함량', row.get('수분(%)', 0)),
+                'agency': str(row.get('검사기관', '-')),
+            }
+
             status, msg = 'success', '정상'
-            
+            conc_status, af_status, legal_ref_status = '정상', '정상', '참고'
+
             if not facility:
-                status, msg = 'error', f'설비[{raw_facility}] 미등록'
-                summary['error'] += 1
-            elif not substance:
-                status, msg = 'error', f'물질[{raw_substance}] 미등록'
+                status, msg = 'error', f'설비[{raw_f}] 미등록'
                 summary['error'] += 1
             else:
-                # 3. 정밀 기준 초과 검증 (실제 수치 비교)
-                if substance.val2 and value > substance.val2:
-                    status, msg = 'danger', f'법적기준 초과 (기준: {substance.val2})'
-                    summary['exceed'] += 1
-                elif substance.val1 and value > substance.val1:
-                    status, msg = 'warning', f'사내기준 초과 (기준: {substance.val1})'
-                    summary['exceed'] += 1
+                # 풍량 상태 계산
+                capacity = max(facility.capacity_ncmm or 0, facility.capacity_acmm or 0)
+                if capacity > 0:
+                    if af > capacity:
+                        af_status = '법적초과'
+                    elif af > (capacity * 0.9):
+                        af_status = '사내초과'
+
+                if not substance:
+                    status, msg = 'warning', f'물질[{raw_s}] 미등록'
+                    summary['warning'] += 1 # 미등록도 일단 성공으로 집계 가능
                 else:
+                    legal_ref_status = substance.legal_type or '법적'
                     summary['success'] += 1
+                    # 농도 상태 계산
+                    if substance.val2 is not None and val > substance.val2:
+                        conc_status = '법적초과'
+                    elif substance.val1 is not None and val > substance.val1:
+                        conc_status = '사내초과'
 
             results.append({
                 'row': index + 2,
                 'facility_id': facility.id if facility else None,
                 'substance_id': substance.id if substance else None,
-                'facility_name': facility.sec if facility else raw_facility,
-                'substance_name': substance.name if substance else raw_substance,
-                'value': value,
+                'facility_name': facility.sec if facility else raw_f,
+                'substance_name': substance.name if substance else raw_s,
+                'value': val,
                 'date': str(row.get('채취일시', ''))[:10],
-                'extra_data': {
-                    'sampling_time_text': str(row.get('채취시간', '')),
-                    'air_flow': row.get('풍량', 0),
-                    'weather': str(row.get('날씨', '')),
-                    'temp': row.get('기온', 0),
-                    'humidity': row.get('습도', 0),
-                    'pressure': row.get('대기압', 0),
-                    'wind_dir': str(row.get('풍향', '')),
-                    'wind_speed': row.get('풍속', 0),
-                    'gas_speed': row.get('가스속도m/s', row.get('가스속도(m/s)', 0)),
-                    'gas_temp': row.get('가스온도', row.get('가스온도(℃)', 0)),
-                    'emission_rate': row.get('배출량(kg/d)', row.get('배출량(kg/day)', 0)),
-                    'agency': str(row.get('검사기관', '-')),
-                },
-                'status': status,
+                'extra_data': extra,
+                'status': status, # 행 전체의 유효성 (error, warning, success)
+                'conc_status': conc_status,
+                'af_status': af_status,
+                'legal_ref_status': legal_ref_status,
                 'msg': msg
             })
-
-        return JsonResponse({'requires_sheet_selection': False, 'results': results, 'summary': summary})
+        return JsonResponse({'results': results, 'summary': summary})
     except Exception as e: return JsonResponse({'error': str(e)}, status=500)
 
 # 4. 최종 데이터 저장 API
 @require_POST  
 def save_excel_data_api(request):  
-    """최종 데이터 저장 API – 성공·오류 정보를 모두 반환"""  
     try:  
         body = json.loads(request.body)  
         final_data_list = body.get('data', [])
-
-        if not final_data_list:  
-            return JsonResponse(  
-                {'status': 'error',  
-                 'message': '저장할 데이터가 없습니다.'},  
-                status=400  
-            )
-
-        # 서비스 → (성공 건수, 오류 리스트) 반환  
         saved_cnt, error_list = ExcelValidationService.save_final_data(final_data_list)
+        return JsonResponse({'status': 'success', 'saved_count': saved_cnt, 'error_count': len(error_list)})
+    except Exception as e: return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
 
-        # ---------- 여기서 필드명을 반드시 saved_count 로 고정 ----------  
-        resp = {  
-            'status': 'success',  
-            'saved_count': saved_cnt,                 # ← 반드시 이 이름  
-            'error_count': len(error_list),  
-            'message': f'총 {saved_cnt}건을 저장했습니다.',  
-            'errors': error_list[:20]                # 필요 시 전체를 반환하거나 페이지네이션  
-        }  
-        return JsonResponse(resp)
-
-    except Exception as e:  
-        import traceback, logging  
-        logging.getLogger('excel_import').error(traceback.format_exc())  
-        return JsonResponse(  
-            {'status': 'error',  
-             'message': f'서버 오류: {str(e)}'},  
-            status=500  
-        )  
-
-    
-# 5. 마스터 정보 일괄 임포트 API
+# 5. [수정됨] 마스터 정보 일괄 임포트 API (urls.py 에러 해결)
 @require_POST
 def import_master_api(request):
     data_type = request.POST.get('type')
@@ -247,6 +287,7 @@ def import_master_api(request):
         if data_type == 'facility': count = ExcelValidationService.import_facilities(excel_file)
         elif data_type == 'substance': count = ExcelValidationService.import_substances(excel_file)
         elif data_type == 'config': count = ExcelValidationService.import_configs(excel_file)
+        else: return JsonResponse({'error': '잘못된 타입입니다.'}, status=400)
         return JsonResponse({'message': f'{count}건 반영 완료'})
     except Exception as e: return JsonResponse({'error': str(e)}, status=500)
 
@@ -258,7 +299,7 @@ def delete_master_api(request):
     try:
         if data_type == 'facility': obj = get_object_or_404(Facility, id=data_id)
         elif data_type == 'substance': obj = get_object_or_404(Substance, id=data_id)
-        elif data_type == 'config': obj = get_object_or_404(MeasurementConfig, id=data_id)
+        else: return JsonResponse({'error': '잘못된 타입입니다.'}, status=400)
         obj.delete()
         return JsonResponse({'status': 'success'})
     except Exception as e: return JsonResponse({'error': str(e)}, status=500)
@@ -273,68 +314,38 @@ def get_facility_config_api(request, facility_id):
 
 @require_POST
 def save_facility_config_api(request):
-    try:
-        data = json.loads(request.body)
-        facility = Facility.objects.get(id=data.get('facility_id'))
-        with transaction.atomic():
-            for item in data.get('items', []):
-                substance = Substance.objects.get(id=item['substance_id'])
-                substance.val1, substance.val2 = item['val1'], item['val2']
-                substance.save()
-                if item['is_active']: MeasurementConfig.objects.get_or_create(facility=facility, substance=substance)
-                else: MeasurementConfig.objects.filter(facility=facility, substance=substance).delete()
-        return JsonResponse({'status': 'success'})
-    except Exception as e: return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+    data = json.loads(request.body)
+    facility = Facility.objects.get(id=data.get('facility_id'))
+    for item in data.get('items', []):
+        sub = Substance.objects.get(id=item['substance_id'])
+        if item['is_active']: MeasurementConfig.objects.get_or_create(facility=facility, substance=sub)
+        else: MeasurementConfig.objects.filter(facility=facility, substance=sub).delete()
+    return JsonResponse({'status': 'success'})
 
-# 상세 정보 조회
 def get_facility_detail_api(request, facility_id):
     f = get_object_or_404(Facility, id=facility_id)
-    return JsonResponse({
-        'id': f.id,
-        'sec': f.sec,
-        'facility_no': f.facility_no,
-        'prevent_no': f.prevent_no,
-        'company_no': f.company_no, # 업체번호
-        'workplace': f.workplace,
-        'line': f.line,
-        'exhaust': f.exhaust,
-        'capacity': f.capacity,
-        'diameter': f.diameter,     # 직경
-        'tms_yn': f.tms_yn,
-        'status': f.status,
-    })
+    return JsonResponse({'id': f.id, 'sec': f.sec, 'facility_no': f.facility_no, 'prevent_no': f.prevent_no, 'company_no': f.company_no, 'workplace': f.workplace, 'line': f.line, 'exhaust': f.exhaust, 'capacity': f.capacity, 'diameter': f.diameter, 'tms_yn': f.tms_yn, 'status': f.status})
 
-# 저장 (신규/수정 통합)
 @require_POST
 def save_facility_detail_api(request):
     data = json.loads(request.body)
-    f_id = data.get('id')
-    if f_id:
-        f = Facility.objects.get(id=f_id)
-    else:
-        f = Facility()
-    
-    f.sec = data.get('sec')
-    f.facility_no = data.get('facility_no')
-    f.prevent_no = data.get('prevent_no')
-    f.company_no = data.get('company_no') # 업체번호 매핑
-    f.workplace = data.get('workplace')
-    f.line = data.get('line')
-    f.exhaust = data.get('exhaust')
-    f.capacity = data.get('capacity')
-    f.diameter = data.get('diameter')     # 직경 매핑
-    f.tms_yn = data.get('tms_yn')
-    f.status = data.get('status')
+    f = Facility.objects.get(id=data['id']) if data.get('id') else Facility()
+    for key, val in data.items(): 
+        if hasattr(f, key): setattr(f, key, val)
     f.save()
     return JsonResponse({'status': 'success'})
 
-# 8. 대시보드 상세 수정 API (엑셀의 모든 필드 매핑)
+# 8. 로그 상세 수정 및 삭제 API (제출용 플래그 포함)
 def get_log_detail_api(request, log_id):
     log = get_object_or_404(DailyLog, id=log_id)
+    capa = max(log.facility.capacity_ncmm or 0, log.facility.capacity_acmm or 0)
     return JsonResponse({
         'id': log.id,
         'facility_sec': log.facility.sec,
-        'substance_name': log.substance.name,
+        'substance_name': log.substance.name if log.substance else log.raw_substance_name,
+        'sub_val1': log.substance.val1 if log.substance else '-',
+        'sub_val2': log.substance.val2 if log.substance else '-',
+        'capa_max': capa,
         'date': log.date.strftime('%Y-%m-%d'),
         'sampling_time': log.sampling_time_text or '',
         'value': log.value,
@@ -347,9 +358,10 @@ def get_log_detail_api(request, log_id):
         'wind_speed': log.wind_speed or 0,
         'gas_speed': log.gas_speed or 0,
         'gas_temp': log.gas_temp or 0,
-        'moisture': log.moisture or 0,  # [변경] water_content -> moisture
+        'moisture': log.moisture or 0,
         'emission_rate': log.emission_rate or 0,
         'agency': log.agency or '',
+        'is_report_data': log.is_report_data,
     })
 
 @require_POST
@@ -357,104 +369,103 @@ def save_log_edit_api(request):
     try:
         data = json.loads(request.body)
         log = DailyLog.objects.get(id=data.get('id'))
-        
-        log.date = data.get('date')
-        log.sampling_time_text = data.get('sampling_time')
-        log.value = data.get('value')
-        log.air_flow = data.get('airflow')
-        log.weather = data.get('weather')
-        log.temp = data.get('temp')
-        log.humidity = data.get('humidity')
-        log.pressure = data.get('pressure')
-        log.wind_dir = data.get('wind_dir')
-        log.wind_speed = data.get('wind_speed')
-        log.gas_speed = data.get('gas_speed')
-        log.gas_temp = data.get('gas_temp')
-        log.moisture = data.get('moisture') # [변경] water_content -> moisture
-        log.emission_rate = data.get('emission_rate')
+        log.date, log.sampling_time_text = data.get('date'), data.get('sampling_time')
+        log.value, log.air_flow = float(data.get('value', 0)), float(data.get('airflow', 0))
+        log.weather, log.temp, log.humidity = data.get('weather'), float(data.get('temp', 0)), float(data.get('humidity', 0))
+        log.pressure, log.wind_dir, log.wind_speed = float(data.get('pressure', 0)), data.get('wind_dir'), float(data.get('wind_speed', 0))
+        log.gas_speed, log.gas_temp, log.moisture = float(data.get('gas_speed', 0)), float(data.get('gas_temp', 0)), float(data.get('moisture', 0))
         log.agency = data.get('agency')
+        log.is_report_data = data.get('is_report_data', False)
         log.save()
         return JsonResponse({'status': 'success'})
-    except Exception as e:
-        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+    except Exception as e: return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
 
 @require_POST
 def delete_log_api(request):
-    try:
-        data = json.loads(request.body)
-        DailyLog.objects.filter(id=data.get('id')).delete()
-        return JsonResponse({'status': 'success'})
-    except Exception as e: return JsonResponse({'status': 'error'}, status=500)
+    DailyLog.objects.filter(id=json.loads(request.body).get('id')).delete()
+    return JsonResponse({'status': 'success'})
 
-# 9. 다운로드 기능
+@require_POST
+def delete_selected_items_api(request):
+    data = json.loads(request.body)
+    count = DailyLog.objects.filter(id__in=data.get('ids', [])).delete()[0]
+    return JsonResponse({'status': 'success', 'message': f'{count}건 삭제 완료'})
+
+# 9. 다운로드 기능 (배출량 제거 버전)
 def download_excel_sample(request):
-    columns = ['채취월', '라인 방지시설(SEC)', '채취일시', '채취시간', '검사기관', '물질', '농도', '풍량', '날씨', '기온', '습도', '대기압', '풍향', '풍속', '가스속도m/s', '가스온도', '수분함량', '출량(kg/d)']
-    df = pd.DataFrame([{'채취월': '3월', '라인 방지시설(SEC)': 'EQP-SCR-01', '채취일시': '2026-03-15', '채취시간': '10:00~11:00', '물질': 'HCL', '농도': 12.5, '풍량': 500, '날씨': '맑음', '기온': 15, '출량(kg/d)': 1.25}], columns=columns)
+    columns = ['채취월', '라인 방지시설(SEC)', '채취일시', '채취시간', '검사기관', '물질', '농도', '풍량', '날씨', '기온', '습도', '대기압', '풍향', '풍속', '가스속도m/s', '가스온도', '수분함량']
+    df = pd.DataFrame([['3월', 'EQP-SCR-01', '2026-03-15', '10:00~11:00', '(주)세이프', 'NOx', 25.1, 500, '맑음', 15, 45, 1013, '남서', 2.1, 12, 35, 1.2]], columns=columns)
     with BytesIO() as b:
         with pd.ExcelWriter(b, engine='openpyxl') as writer: df.to_excel(writer, index=False)
-        return HttpResponse(b.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition': 'attachment; filename=Integrated_Data_Sample.xlsx'})
+        return HttpResponse(b.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition': 'attachment; filename=Integrated_Sample.xlsx'})
 
 def download_settings_sample(request):
+    """DB 데이터 기반의 최신 양식을 생성하여 다운로드합니다."""
     target = request.GET.get('target')
+    
     with BytesIO() as b:
         with pd.ExcelWriter(b, engine='openpyxl') as writer:
             if target == 'facility':
-                columns = ['시설번호', '방지시설번호', '업체번호', '세부라인 방지시설(SEC)', '사업장', '라인', '배기', '라인 배기', '라인 세부 방지(공통)', '용량', 'TMS', '운영/폐쇄', '직경']
-                df = pd.DataFrame([['F-001', 'P-101', 'C-501', 'EQP-SCR-01', '본사', '1라인', 'SCR', '1라인 SCR', '가스세정시설', '500', 'X', '운영', '1200']], columns=columns)
-            else:
+                # Facility 모델의 모든 필드를 반영한 최신 양식
+                columns = [
+                    '시설번호', '방지시설번호', '업체번호', '세부라인 방지시설(SEC)', '사업장', 
+                    '라인', '배기', '용량', '용량(NCMM)', '용량(ACMM)', 'TMS', '운영/폐쇄', '직경'
+                ]
+                sample_data = [[
+                    'F-001', 'P-101', 'C-001', 'EQP-SCR-01', '본사', 'A-LINE', 'E-01', 
+                    '1000', 650, 600, 'X', '운영', '1200'
+                ]]
+                df = pd.DataFrame(sample_data, columns=columns)
+                df.to_excel(writer, index=False, sheet_name='설비마스터_양식')
+
+            elif target == 'config':
+                # DB의 시설/물질 기준으로 통합 기준 관리 양식 생성
+                facilities = Facility.objects.all().order_by('sec')
                 substances = Substance.objects.all().order_by('name')
-                columns = ['세부라인 방지시설']
-                for s in substances: columns.extend([f'{s.name}_법적', f'{s.name}_사내', f'{s.name}_단위'])
-                sample_row = ['EQP-SCR-01']
-                for s in substances: sample_row.extend([10.0, 5.0, s.unit])
-                df = pd.DataFrame([sample_row], columns=columns)
-            df.to_excel(writer, index=False)
-        return HttpResponse(b.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition': 'attachment; filename=Sample.xlsx'})
+                
+                # 활성화된 설정(필수 측정 항목) 미리 로드
+                active_configs = set(MeasurementConfig.objects.values_list('facility_id', 'substance_id'))
+                
+                header = ['세부라인 방지시설(SEC)']
+                for sub in substances:
+                    header.append(f'{sub.name}_사내')
+                    header.append(f'{sub.name}_법적')
+                
+                data_rows = []
+                for fac in facilities:
+                    row = {'세부라인 방지시설(SEC)': fac.sec}
+                    for sub in substances:
+                        # 해당 시설-물질 조합이 활성화된 경우에만 기준값 표시
+                        if (fac.id, sub.id) in active_configs:
+                            row[f'{sub.name}_사내'] = sub.val1 if sub.val1 is not None else ''
+                            row[f'{sub.name}_법적'] = sub.val2 if sub.val2 is not None else ''
+                        else:
+                            row[f'{sub.name}_사내'] = ''
+                            row[f'{sub.name}_법적'] = ''
+                    data_rows.append(row)
+                
+                df = pd.DataFrame(data_rows)
+                df.to_excel(writer, index=False, sheet_name='통합기준관리_양식')
+
+        filename = f"Settings_Sample_{target}.xlsx"
+        return HttpResponse(
+            b.getvalue(), 
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 
+            headers={'Content-Disposition': f'attachment; filename*=UTF-8\'\'{filename}'}
+        )
 
 def get_substance_detail_api(request, substance_id):
     s = get_object_or_404(Substance, id=substance_id)
-    return JsonResponse({
-        'id': s.id,
-        'name': s.name,
-        'unit': s.unit,
-        'formula': s.formula,
-        'legal_type': s.legal_type, # 추가
-        'cycle': s.cycle,           # 추가
-    })     
+    return JsonResponse({'id': s.id, 'name': s.name, 'unit': s.unit, 'formula': s.formula, 'legal_type': s.legal_type, 'cycle': s.cycle})
 
 @require_POST  
 def save_substance_api(request):  
     data = json.loads(request.body)
-
-    # [수정] 필수값 검사 (name, unit, formula, legal_type, cycle 모두 포함)
-    required = ['name', 'unit', 'formula', 'legal_type', 'cycle']  
-    for k in required:  
-        if not data.get(k):  
-            return JsonResponse({'error': f'"{k}" 필드는 필수입니다.'}, status=400)
-
     try:  
         with transaction.atomic():  
-            if data.get('id'): # 수정 모드
-                sub = Substance.objects.select_for_update().get(id=data['id'])  
-                sub.name = data['name']  
-                sub.unit = data['unit']  
-                sub.formula = data['formula']  
-                sub.legal_type = data['legal_type']
-                sub.cycle = data['cycle']
-                sub.save()  
-                msg = '물질 정보가 정상적으로 수정되었습니다.'  
-            else: # 신규 등록 모드
-                Substance.objects.create(  
-                    name=data['name'],  
-                    unit=data['unit'],  
-                    formula=data['formula'],
-                    legal_type=data['legal_type'],
-                    cycle=data['cycle']
-                )  
-                msg = '새 물질이 추가되었습니다.'
-
-        return JsonResponse({'status': 'success', 'message': msg})  
-    except IntegrityError:  # 중복 이름 방지
-        return JsonResponse({'error': '동일한 물질명이 이미 존재합니다.'}, status=409)  
-    except Exception as e:  
-        return JsonResponse({'error': str(e)}, status=500)  
+            sub = Substance.objects.get(id=data['id']) if data.get('id') else Substance()
+            sub.name, sub.unit, sub.formula = data['name'], data['unit'], data['formula']
+            sub.legal_type, sub.cycle = data['legal_type'], data['cycle']
+            sub.save()
+        return JsonResponse({'status': 'success'})  
+    except Exception as e: return JsonResponse({'error': str(e)}, status=500)

@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% load static %}
+{% load common_tags %}
 
 {% block title %}환통법 통합 운영 대시보드{% endblock %}
 
@@ -8,268 +9,395 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h4 class="fw-bold mb-1 text-dark">환통법 통합 운영 대시보드</h4>
-            <p class="text-muted small mb-0">측정 현황 분석 및 데이터 관리</p>
+            <p class="text-muted small mb-0">측정 현황 분석, RAW 데이터 관리 및 라인별 농도 분석</p>
         </div>
         <div class="d-flex gap-2">
-            <a href="{% url 'integrated:download_sample' %}" class="btn btn-outline-primary shadow-sm px-3">
-                <i class="bi bi-download me-1"></i> 업로드 양식 다운로드
-            </a>
-            <button onclick="exportToExcel()" class="btn btn-outline-dark shadow-sm px-3">
-                <i class="bi bi-file-earmark-excel me-1"></i> 리포트 다운로드
-            </button>
+            <a href="{% url 'integrated:download_sample' %}" class="btn btn-outline-primary shadow-sm px-3"><i class="bi bi-download me-1"></i> 업로드 양식</a>
+            <button onclick="exportToExcel()" class="btn btn-outline-dark shadow-sm px-3"><i class="bi bi-file-earmark-excel me-1"></i> 리포트 다운로드</button>
             <input type="file" id="excelFile" class="d-none" onchange="handleFileUpload(this)">
-            <button class="btn btn-primary shadow-sm fw-bold px-4" onclick="document.getElementById('excelFile').click()">
-                <i class="bi bi-plus-lg me-1"></i> 새 데이터 업로드/분석
-            </button>
+            <button class="btn btn-primary shadow-sm fw-bold px-4" onclick="document.getElementById('excelFile').click()"><i class="bi bi-plus-lg me-1"></i> 새 데이터 업로드</button>
         </div>
     </div>
 
-    <div class="row row-cols-1 row-cols-md-2 row-cols-xl-4 g-3 mb-4">
-        <div class="col">
-            <div class="card border-0 shadow-sm bg-primary text-white h-100 card-hover-effect" 
-                 style="border-radius: 12px; cursor: pointer; min-height: 140px;" 
-                 onclick="location.href='{% url 'integrated:settings_page' %}?tab=tab-matrix'">
-                <div class="card-body d-flex flex-column justify-content-center align-items-center p-3 text-center">
-                    <h6 class="text-white-50 small mb-2">총 필수 측정 항목 <i class="bi bi-gear-fill ms-1"></i></h6>
-                    <h2 class="fw-bold mb-0">{{ total_required }} <small class="fs-6">건</small></h2>
-                    <small class="text-white-50 mt-2" style="font-size: 0.65rem;">클릭 시 기준정보 관리 이동</small>
+    <ul class="nav nav-tabs mb-4 border-bottom-0" id="dashboardTabs" role="tablist">
+        <li class="nav-item"><button class="nav-link fw-bold px-4 {% if active_tab == 'summary-content' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#summary-content" type="button">초과현황 요약</button></li>
+        <li class="nav-item"><button class="nav-link fw-bold px-4 {% if active_tab == 'raw-content' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#raw-content" type="button">RAW 데이터 관리</button></li>
+        <li class="nav-item"><button class="nav-link fw-bold px-4 {% if active_tab == 'chart-content' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#chart-content" type="button">라인별 농도 분석</button></li>
+    </ul>
+
+    <div class="tab-content">
+        <div class="tab-pane fade {% if active_tab == 'summary-content' %}show active{% endif %}" id="summary-content">
+            <div class="row row-cols-1 row-cols-md-4 g-3 mb-4">
+                <div class="col">
+                    <div class="card h-100 border-0 shadow-sm bg-dark text-white p-3 text-center d-flex flex-column justify-content-center" style="min-height:130px;">
+                        <h6 class="small mb-2">연간 총 측정항목 (제출용)</h6>
+                        <h2 class="fw-bold mb-1">{{ annual_total_required }} 건</h2>
+                        <div class="small">이행률: {{ annual_completion_rate }}%</div>
+                        <div class="progress mt-2" style="height:5px;">
+                            <div class="progress-bar bg-light" style="width: {{ annual_completion_rate }}%"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="card h-100 border-0 shadow-sm bg-white border-start border-primary border-5 p-3 text-center d-flex flex-column justify-content-center" onclick="openDueThisMonthModal()" style="cursor:pointer; min-height:130px;">
+                        <h6 class="text-primary small mb-2">당월 측정항목 (제출용)</h6>
+                        <h2 class="fw-bold text-primary mb-1">{{ due_this_month.total }} 건</h2>
+                        <div class="small">이행률: {{ due_this_month.completion_rate }}% ({{ due_this_month.completed }}/{{ due_this_month.total }})</div>
+                        <div class="small mt-1">
+                            <span class="badge bg-success-subtle text-success border border-success-subtle">정상 {{ due_this_month.normal }}</span> 
+                            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">사내 {{ due_this_month.internal_exceed }}</span>
+                            <span class="badge bg-danger-subtle text-danger-emphasis border border-danger-subtle">법적 {{ due_this_month.legal_exceed }}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="card h-100 border-0 shadow-sm bg-white p-3 text-center d-flex flex-column justify-content-center" style="min-height:130px; background-color: #f8f9fa !important;">
+                        <h6 class="text-muted small mb-2">이월 항목</h6>
+                        <h2 class="fw-bold text-muted mb-1">...</h2>
+                        <div class="small text-muted">구현 예정</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card border-0 shadow-sm mb-3 bg-light">
+                <div class="card-body py-2">
+                    <form method="GET" class="row g-2 align-items-center">
+                        <input type="hidden" name="tab" value="summary-content">
+                        <div class="col-auto"><select name="year" class="form-select form-select-sm auto-submit-filter">{% for y in year_range %}<option value="{{ y }}" {% if y|slugify == selected_year %}selected{% endif %}>{{ y }}년</option>{% endfor %}</select></div>
+                        <div class="col-auto"><select name="month" class="form-select form-select-sm auto-submit-filter">{% for m in month_range %}<option value="{{ m }}" {% if m|slugify == selected_month %}selected{% endif %}>{{ m }}월</option>{% endfor %}</select></div>
+                        <div class="col-auto border-start ms-2 ps-3"><input type="text" id="filter-facility" class="form-control form-control-sm" placeholder="설비명 검색..." onkeyup="filterLogTable()"></div>
+                        <div class="col-auto"><input type="text" id="filter-substance" class="form-control form-control-sm" placeholder="물질명 검색..." onkeyup="filterLogTable()"></div>
+                        <div class="col-auto">
+                            <select id="filter-exceed" class="form-select form-select-sm" onchange="filterLogTable()">
+                                <option value="">전체 상태</option><option value="정상">정상</option><option value="사내초과">사내기준 초과</option><option value="법적초과">법적기준 초과</option>
+                            </select>
+                        </div>
+                        <div class="col-auto ms-auto"><button type="button" class="btn btn-outline-secondary btn-sm" onclick="resetLogFilter()">필터 초기화</button></div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-0">
+                    <div class="card-footer bg-white border-0 text-end"><button class="btn btn-danger btn-sm" onclick="deleteCheckedLogs()">선택 삭제</button></div>
+                    <table id="logTable" class="table table-hover align-middle mb-0" style="font-size: 0.82rem; white-space: nowrap;">
+                        <thead class="table-dark">
+                            <tr>
+                                <th class="ps-4" style="width: 40px;"><input type="checkbox" onclick="toggleAllLogs(this)"></th>
+                                <th>설비정보(SEC)</th><th>채취일시</th><th>구분</th><th>물질</th><th>제출용</th><th class="text-end">농도</th><th class="text-center">농도상태</th><th class="text-end">풍량</th><th class="text-center">풍량상태</th><th class="text-end pe-4">배출량</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for log in logs %}
+                            <tr onclick="openLogEditModal('{{ log.id }}')" style="cursor: pointer;" 
+                                data-sec="{{ log.facility.sec }}" data-substance="{{ log.substance.name|default:log.raw_substance_name }}" data-status="{{ log.substance_status }}">
+                                <td class="ps-4" onclick="event.stopPropagation();"><input type="checkbox" class="log-check" value="{{ log.id }}"></td>
+                                <td><div class="fw-bold">{{ log.facility.sec }}</div><div class="small text-muted">({{ log.facility.facility_no }})</div></td>
+                                <td>{{ log.date|date:"Y-m-d" }}<br><small>{{ log.sampling_time_text }}</small></td>
+                                <td>{% if log.substance.legal_type == '법적' %}<span class="badge bg-primary-subtle text-primary border border-primary-subtle">법적</span>{% else %}<span class="badge bg-light text-muted border">참고</span>{% endif %}</td>
+                                <td>{% if log.substance %}<span class="fw-bold">{{ log.substance.name }}</span>{% else %}<span class="text-muted fst-italic">{{ log.raw_substance_name }}</span> <span class="badge bg-secondary">미등록</span>{% endif %}</td>
+                                <td class="text-center">{% if log.is_report_data %}<span class="badge bg-info">대상</span>{% else %}-{% endif %}</td>
+                                <td class="text-end">
+                                    <div class="fw-bold text-primary">{{ log.value }}</div>
+                                    <div class="text-muted" style="font-size: 0.7rem;">사내: {{ log.substance.val1|default:"-" }} / 법적: {{ log.substance.val2|default:"-" }}</div>
+                                </td>
+                                <td class="text-center">
+                                    {% if log.substance_status == '법적초과' %}<span class="badge bg-danger">법적초과</span>
+                                    {% elif log.substance_status == '사내초과' %}<span class="badge bg-warning text-dark">사내초과</span>
+                                    {% else %}<span class="badge bg-success-subtle text-success border border-success-subtle">정상</span>{% endif %}
+                                </td>
+                                <td class="text-end">
+                                    <div class="fw-bold">{{ log.air_flow|default:"0" }}</div>
+                                    {% with ncmm=log.facility.capacity_ncmm|default:0 acmm=log.facility.capacity_acmm|default:0 %}
+                                        {% if ncmm > acmm %}{% define ncmm as capacity %}{% else %}{% define acmm as capacity %}{% endif %}
+                                        <div class="text-muted" style="font-size: 0.7rem;">사내: {{ capacity|multiply:0.9|floatformat:1 }} / 법적: : {{ capacity|floatformat:1 }}</div>
+                                    {% endwith %}
+                                </td>
+                                <td class="text-center">
+                                    {% if log.airflow_status == '법적초과' %}<span class="badge bg-danger">용량초과</span>
+                                    {% elif log.airflow_status == '사내초과' %}<span class="badge bg-warning text-dark">90%근접</span>
+                                    {% else %}<span class="badge bg-success-subtle text-success border border-success-subtle">정상</span>{% endif %}
+                                </td>
+                                <td class="text-end fw-bold text-info pe-4">{{ log.emission_rate }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
 
-        <div class="col">
-            <div class="card border-0 shadow-sm bg-white h-100 card-hover-effect" 
-                 style="border-radius: 12px; cursor: pointer; min-height: 140px;" 
-                 onclick="openCompletedModal()">
-                <div class="card-body d-flex flex-column justify-content-center align-items-center p-3 border-start border-success border-5 text-center">
-                    <h6 class="text-muted small mb-2 text-success">측정 완료 <i class="bi bi-check-circle ms-1"></i></h6>
-                    <h2 class="fw-bold text-success mb-1">{{ completed_count }}</h2>
-                    <div class="d-flex justify-content-center gap-1 mt-1">
-                        <span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size:0.6rem;">정상 {{ counts.normal }}</span>
-                        <span class="badge bg-warning-subtle text-warning border border-warning-subtle" style="font-size:0.6rem;">사내초과 {{ counts.internal_exceed }}</span>
-                        <span class="badge bg-danger-subtle text-danger border border-danger-subtle" style="font-size:0.6rem;">법적초과 {{ counts.legal_exceed }}</span>
+        <div class="tab-pane fade {% if active_tab == 'raw-content' %}show active{% endif %}" id="raw-content">
+            <div class="card border-0 shadow-sm mb-3 bg-light">
+                <div class="card-body py-2">
+                    <form method="GET" class="row g-2 align-items-center">
+                        <input type="hidden" name="tab" value="raw-content">
+                        <div class="col-auto"><select name="year" class="form-select form-select-sm auto-submit-filter">{% for y in year_range %}<option value="{{ y }}" {% if y|slugify == selected_year %}selected{% endif %}>{{ y }}년</option>{% endfor %}</select></div>
+                        <div class="col-auto"><select name="month" class="form-select form-select-sm auto-submit-filter">{% for m in month_range %}<option value="{{ m }}" {% if m|slugify == selected_month %}selected{% endif %}>{{ m }}월</option>{% endfor %}</select></div>
+                        <div class="col ms-2"><input type="text" id="raw-search" class="form-control form-control-sm" placeholder="데이터 전체 검색 (설비, 물질, 기관 등)..." onkeyup="filterRawTable()"></div>
+                    </form>
+                </div>
+            </div>
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-0">
+                    <div class="table-responsive" style="max-height:650px;">
+                        <table id="rawTable" class="table table-hover align-middle mb-0" style="font-size: 0.78rem; white-space: nowrap;">
+                            <thead class="table-dark sticky-top">
+                                <tr><th>설비(SEC)</th><th>일자</th><th>물질</th><th>농도</th><th>풍량</th><th>날씨/기온</th><th>습도/기압</th><th>풍향/풍속</th><th>가스속도/온도</th><th>수분</th><th>기관</th></tr>
+                            </thead>
+                            <tbody>
+                                {% for log in logs %}
+                                <tr onclick="openLogEditModal('{{ log.id }}')" style="cursor:pointer;">
+                                    <td class="fw-bold">{{ log.facility.sec }}</td>
+                                    <td>{{ log.date|date:"m-d" }}</td>
+                                    <td>{{ log.substance.name|default:log.raw_substance_name }}</td>
+                                    <td class="text-end fw-bold text-primary">{{ log.value }}</td>
+                                    <td class="text-end">{{ log.air_flow }}</td>
+                                    <td>{{ log.weather|default:"-" }}/{{ log.temp }}℃</td>
+                                    <td>{{ log.humidity }}%/{{ log.pressure }}</td>
+                                    <td>{{ log.wind_dir|default:"-" }}/{{ log.wind_speed }}m/s</td>
+                                    <td>{{ log.gas_speed }}/{{ log.gas_temp }}</td>
+                                    <td>{{ log.moisture }}%</td>
+                                    <td class="small">{{ log.agency }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
         </div>
 
-        <div class="col">
-            <div class="card border-0 shadow-sm bg-white h-100 card-hover-effect" 
-                 style="border-radius: 12px; cursor: pointer; min-height: 140px;" 
-                 onclick="openComplianceModal()">
-                <div class="card-body d-flex flex-column justify-content-center align-items-center p-3 border-start border-danger border-5 text-center">
-                    <h6 class="text-muted small mb-2 text-danger">누락(미측정) <i class="bi bi-exclamation-triangle ms-1"></i></h6>
-                    <h2 class="fw-bold text-danger mb-0">{{ missing_count }}</h2>
-                    <small class="text-muted mt-2" style="font-size: 0.65rem;">클릭하여 상세 검토</small>
-                </div>
-            </div>
-        </div>
-
-        <div class="col">
-            <div class="card border-0 shadow-sm bg-info text-white h-100" 
-                 style="border-radius: 12px; min-height: 140px;">
-                <div class="card-body d-flex flex-column justify-content-center align-items-center p-3 text-center">
-                    <h6 class="text-white-50 small mb-2">이행률 (Compliance)</h6>
-                    <h2 class="fw-bold mb-0" style="font-size: 2.2rem;">{{ completion_rate }}%</h2>
-                    <div class="progress mt-3 w-75" style="height: 6px; background: rgba(255,255,255,0.2);">
-                        <div class="progress-bar bg-white" style="width: {{ completion_rate }}%"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="card border-0 shadow-sm mb-4" style="border-radius: 12px;">
-        <div class="card-header bg-white py-3 border-bottom">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <h6 class="fw-bold mb-0 text-dark">
-                    <i class="bi bi-list-columns-reverse text-info me-2"></i>{{ selected_year }}년 {{ selected_month }}월 상세 측정 데이터 로그
-                </h6>
-                <form method="GET" class="d-flex gap-2 align-items-center">
-                    <select name="year" class="form-select form-select-sm" style="width: 100px;">
-                        {% for y in year_range %}<option value="{{ y }}" {% if y|slugify == selected_year %}selected{% endif %}>{{ y }}년</option>{% endfor %}
-                    </select>
-                    <select name="month" class="form-select form-select-sm" style="width: 80px;">
-                        {% for m in month_range %}<option value="{{ m }}" {% if m|slugify == selected_month %}selected{% endif %}>{{ m }}월</option>{% endfor %}
-                    </select>
-                    <button type="submit" class="btn btn-dark btn-sm px-3">조회</button>
-                </form>
-            </div>
-
-            <div class="row g-2 p-2 bg-light rounded border mx-0">
-                <div class="col-md-2"><input type="text" id="filter-facility" class="form-control form-control-sm" placeholder="설비명(SEC) 검색..." onkeyup="filterLogTable()"></div>
-                <div class="col-md-2"><input type="text" id="filter-line" class="form-control form-control-sm" placeholder="라인 검색..." onkeyup="filterLogTable()"></div>
-                <div class="col-md-2"><input type="text" id="filter-substance" class="form-control form-control-sm" placeholder="물질명 검색..." onkeyup="filterLogTable()"></div>
-                <div class="col-md-2">
-                    <select id="filter-exceed" class="form-select form-select-sm" onchange="filterLogTable()">
-                        <option value="">초과여부 전체</option>
-                        <option value="정상">정상</option>
-                        <option value="사내 초과">사내기준 초과</option>
-                        <option value="법적 초과">법적기준 초과</option>
-                        <option value="초과">초과 전체</option>
-                    </select>
-                </div>
-                <div class="col-md-3"><input type="text" id="filter-agency" class="form-control form-control-sm" placeholder="검사기관 검색..." onkeyup="filterLogTable()"></div>
-                <div class="col-md-1"><button class="btn btn-outline-secondary btn-sm w-100" onclick="resetLogFilter()">초기화</button></div>
-            </div>
-        </div>
-
-        <div class="card-body p-0">
-            <div class="table-responsive" style="max-height: 600px;">
-                <table id="logTable" class="table table-hover align-middle mb-0" style="font-size: 0.82rem; white-space: nowrap;">
-                    <thead class="table-dark sticky-top">
-                        <tr>
-                            <th class="ps-4">설비정보(SEC/라인)</th>
-                            <th>채취일시/시간</th>
-                            <th>물질</th>
-                            <th class="text-end">농도(측정값)</th>
-                            <th>기준치(사내/법적)</th>
-                            <th class="text-center">초과여부</th>
-                            <th>기상(날씨/풍량/기온)</th>
-                            <th>배출량(kg/d)</th>
-                            <th class="pe-4">검사기관</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for log in logs %}
-                        <tr style="cursor: pointer;" onclick="openLogEditModal('{{ log.id }}')" 
-                            data-sec="{{ log.facility.sec }}" 
-                            data-line="{{ log.facility.line|default:'' }}" 
-                            data-substance="{{ log.substance.name }}" 
-                            data-agency="{{ log.agency|default:'' }}"
-                            data-status="{% if log.value > log.substance.val2 %}법적 초과{% elif log.value > log.substance.val1 %}사내 초과{% else %}정상{% endif %}">
-                            <td class="ps-4">
-                                <div class="fw-bold">{{ log.facility.sec }}</div>
-                                <div class="text-muted small">
-                                    <span class="badge bg-light text-dark border">{{ log.facility.line|default:"라인 미지정" }}</span>
+        <div class="tab-pane fade {% if active_tab == 'chart-content' %}show active{% endif %}" id="chart-content">
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-body py-3">
+                    <form method="GET" class="row g-3 align-items-center">
+                        <input type="hidden" name="tab" value="chart-content">
+                        <div class="col-auto">
+                            <select name="year" class="form-select form-select-sm">
+                                {% for y in year_range %}<option value="{{ y }}" {% if y|slugify == selected_year %}selected{% endif %}>{{ y }}년</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-auto">
+                            <select name="month" class="form-select form-select-sm">
+                                {% for m in month_range %}<option value="{{ m }}" {% if m|slugify == selected_month %}selected{% endif %}>{{ m }}월</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="col">
+                            <div class="d-flex flex-wrap gap-2 align-items-center border rounded p-2 bg-white">
+                                <span class="small fw-bold me-2 text-primary"><i class="bi bi-funnel-fill"></i> 물질 선택:</span>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="checkbox" id="checkAllSub" onclick="toggleAllSubstances(this)">
+                                    <label class="form-check-label small" for="checkAllSub">전체선택</label>
                                 </div>
-                            </td>
-                            <td><div>{{ log.date }}</div><div class="text-secondary small">{{ log.sampling_time_text|default:"-" }}</div></td>
-                            <td><span class="badge border text-dark bg-white font-monospace">{{ log.substance.name }}</span></td>
-                            <td class="text-end fw-bold text-primary">{{ log.value }}</td>
-                            <td class="small"><div class="text-muted">사내: {{ log.substance.val1 }}</div><div class="text-danger" style="font-size: 0.7rem;">법적: {{ log.substance.val2|default:"-" }}</div></td>
-                            <td class="text-center">
-                                {% if log.value > log.substance.val2 %}<span class="badge bg-danger shadow-sm">법적 초과</span>
-                                {% elif log.value > log.substance.val1 %}<span class="badge bg-warning shadow-sm text-dark">사내 초과</span>
-                                {% else %}<span class="badge bg-success-subtle text-success border border-success-subtle">정상</span>{% endif %}
-                            </td>
-                            <td><div class="small">풍량: <span class="fw-bold text-dark">{{ log.air_flow|default:"0" }}</span></div><div class="text-muted small">{{ log.weather|default:"-" }} / {{ log.temp|default:"0" }}℃</div></td>
-                            <td class="text-info fw-bold">{{ log.emission_rate|default:"0" }}</td>
-                            <td class="pe-4 small text-muted">{{ log.agency|default:"-" }}</td>
-                        </tr>
-                        {% empty %}
-                        <tr><td colspan="9" class="text-center py-5 text-muted"><i class="bi bi-search fs-2 d-block mb-2"></i>조회된 측정 기록이 없습니다.</td></tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                                {% for sub in all_substances %}
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input sub-check" type="checkbox" name="substances" value="{{ sub.name }}" {% if sub.name in selected_substances %}checked{% endif %}>
+                                    <label class="form-check-label small">{{ sub.name }}</label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        <div class="col-auto"><button type="submit" class="btn btn-primary px-4 shadow-sm fw-bold">차트 업데이트</button></div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="row g-3">
+                {% for line_name, data in chart_data.items %}
+                <div class="col-xl-6">
+                    <div class="card border-0 shadow-sm p-3">
+                        <h6 class="fw-bold text-primary mb-3"><i class="bi bi-bar-chart-line me-1"></i> {{ line_name }} 분석</h6>
+                        <div style="height: 400px; width: 100%;">
+                            <canvas id="chart-{{ forloop.counter }}"></canvas>
+                        </div>
+                    </div>
+                </div>
+                {% empty %}
+                <div class="col-12"><div class="alert alert-light text-center border py-5">조회된 데이터가 없거나 물질 필터를 선택해주세요.</div></div>
+                {% endfor %}
             </div>
         </div>
     </div>
 </div>
 
-<div class="modal fade" id="logEditModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
-        <div class="modal-content border-0 shadow">
-            <div class="modal-header bg-primary text-white py-2">
-                <h6 class="modal-title fw-bold">측정 데이터 상세 수정 (전체 항목)</h6>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
+<div class="modal fade" id="logEditModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-dark text-white py-2"><h6 class="modal-title fw-bold">측정 데이터 상세 수정</h6><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
             <div class="modal-body p-4">
                 <input type="hidden" id="edit-log-id">
                 <div class="row g-3">
-                    <div class="col-12 bg-light p-2 rounded mb-2"><span id="display-log-info" class="fw-bold text-primary"></span></div>
-                    
-                    <div class="col-md-4"><label class="form-label small fw-bold">측정 일자</label><input type="date" id="edit-log-date" class="form-control form-control-sm"></div>
-                    <div class="col-md-4"><label class="form-label small fw-bold">채취 시간</label><input type="text" id="edit-log-time" class="form-control form-control-sm" placeholder="예: 10:00~11:00"></div>
-                    <div class="col-md-4"><label class="form-label small fw-bold">측정값(농도)</label><input type="number" step="any" id="edit-log-value" class="form-control form-control-sm border-primary"></div>
-                    
-                    <div class="col-md-3"><label class="form-label small fw-bold">날씨</label><input type="text" id="edit-log-weather" class="form-control form-control-sm"></div>
-                    <div class="col-md-3"><label class="form-label small fw-bold">기온(℃)</label><input type="number" step="any" id="edit-log-temp" class="form-control form-control-sm"></div>
-                    <div class="col-md-3"><label class="form-label small fw-bold">습도(%)</label><input type="number" step="any" id="edit-log-humidity" class="form-control form-control-sm"></div>
-                    <div class="col-md-3"><label class="form-label small fw-bold">대기압</label><input type="number" step="any" id="edit-log-pressure" class="form-control form-control-sm"></div>
-                    
-                    <div class="col-md-3"><label class="form-label small fw-bold">풍향</label><input type="text" id="edit-log-wind-dir" class="form-control form-control-sm"></div>
-                    <div class="col-md-3"><label class="form-label small fw-bold">풍속(m/s)</label><input type="number" step="any" id="edit-log-wind-speed" class="form-control form-control-sm"></div>
-                    <div class="col-md-3"><label class="form-label small fw-bold">가스속도(m/s)</label><input type="number" step="any" id="edit-log-gas-speed" class="form-control form-control-sm"></div>
-                    <div class="col-md-3"><label class="form-label small fw-bold">가스온도(℃)</label><input type="number" step="any" id="edit-log-gas-temp" class="form-control form-control-sm"></div>
-
-                    <div class="col-md-3"><label class="form-label small fw-bold">풍량(㎥/min)</label><input type="number" step="any" id="edit-log-airflow" class="form-control form-control-sm"></div>
-                    <div class="col-md-3"><label class="form-label small fw-bold">수분함량(%)</label><input type="number" step="any" id="edit-log-water" class="form-control form-control-sm"></div>
-                    <div class="col-md-3"><label class="form-label small fw-bold">배출량(kg/d)</label><input type="number" step="any" id="edit-log-emission" class="form-control form-control-sm"></div>
-                    <div class="col-md-3"><label class="form-label small fw-bold">검사기관</label><input type="text" id="edit-log-agency" class="form-control form-control-sm"></div>
+                    <div class="col-12 bg-light p-3 rounded border mb-2"><div id="display-log-info" class="fw-bold text-primary mb-1"></div><div id="display-log-limits" class="small text-muted"></div></div>
+                    <div class="col-md-3"><label class="form-label small fw-bold">측정 일자</label><input type="date" id="edit-log-date" class="form-control"></div>
+                    <div class="col-md-3"><label class="form-label small fw-bold">채취 시간</label><input type="text" id="edit-log-time" class="form-control"></div>
+                    <div class="col-md-3"><label class="form-label small fw-bold text-primary">농도</label><input type="number" step="any" id="edit-log-value" class="form-control border-primary shadow-sm"></div>
+                    <div class="col-md-3"><label class="form-label small fw-bold text-success">풍량</label><input type="number" step="any" id="edit-log-airflow" class="form-control border-success shadow-sm"></div>
+                    <div class="col-12"><hr class="my-1"></div>
+                    <div class="col-md-2"><label class="form-label small fw-bold">날씨</label><input type="text" id="edit-log-weather" class="form-control form-control-sm"></div>
+                    <div class="col-md-2"><label class="form-label small fw-bold">기온</label><input type="number" step="any" id="edit-log-temp" class="form-control form-control-sm"></div>
+                    <div class="col-md-2"><label class="form-label small fw-bold">습도</label><input type="number" step="any" id="edit-log-humidity" class="form-control form-control-sm"></div>
+                    <div class="col-md-2"><label class="form-label small fw-bold">대기압</label><input type="number" step="any" id="edit-log-pressure" class="form-control form-control-sm"></div>
+                    <div class="col-md-2"><label class="form-label small fw-bold">풍향</label><input type="text" id="edit-log-wind-dir" class="form-control form-control-sm"></div>
+                    <div class="col-md-2"><label class="form-label small fw-bold">풍속</label><input type="number" step="any" id="edit-log-wind-speed" class="form-control form-control-sm"></div>
+                    <div class="col-md-3"><label class="form-label small fw-bold">가스속도</label><input type="number" step="any" id="edit-log-gas-speed" class="form-control form-control-sm"></div>
+                    <div class="col-md-3"><label class="form-label small fw-bold">가스온도</label><input type="number" step="any" id="edit-log-gas-temp" class="form-control form-control-sm"></div>
+                    <div class="col-md-2"><label class="form-label small fw-bold">수분(%)</label><input type="number" step="any" id="edit-log-water" class="form-control form-control-sm"></div>
+                    <div class="col-md-2"><label class="form-label small fw-bold text-danger">제출용 여부</label>
+                        <select id="edit-log-report" class="form-select form-select-sm border-danger">
+                            <option value="true">대상</option><option value="false">미대상</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2"><label class="form-label small fw-bold">배출량</label><input type="number" id="edit-log-emission" class="form-control form-control-sm bg-light" readonly></div>
+                    <div class="col-12"><label class="form-label small fw-bold">검사기관</label><input type="text" id="edit-log-agency" class="form-control form-control-sm"></div>
                 </div>
             </div>
-            <div class="modal-footer bg-light py-2">
-                <button type="button" class="btn btn-outline-danger btn-sm me-auto" onclick="deleteLogData()">데이터 삭제</button>
-                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">취소</button>
-                <button type="button" class="btn btn-primary btn-sm px-4 fw-bold" onclick="saveLogEdit()">수정사항 저장</button>
-            </div>
+            <div class="modal-footer bg-light py-2"><button type="button" class="btn btn-outline-danger btn-sm me-auto" onclick="deleteLogData()">데이터 삭제</button><button type="button" class="btn btn-primary btn-sm px-4 fw-bold" onclick="saveLogEdit()">수정사항 저장</button></div>
         </div>
     </div>
 </div>
 
-<div class="modal fade" id="complianceModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-md modal-dialog-centered modal-dialog-scrollable">
+<div class="modal fade" id="dueThisMonthModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
         <div class="modal-content border-0 shadow-lg">
-            <div class="modal-header bg-danger text-white py-3"><h5 class="modal-title fw-bold"><i class="bi bi-exclamation-triangle me-2"></i>미측정(누락) 상세 내역</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
-            <div class="modal-body p-0">
-                <div class="p-3 bg-light border-bottom d-flex justify-content-between"><span class="small text-muted">이번 달 아직 측정되지 않은 항목입니다.</span><span class="badge bg-danger">총 {{ missing_count }}건</span></div>
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle text-center mb-0" style="font-size: 0.85rem;">
-                        <thead class="table-light sticky-top"><tr><th>방지시설(SEC)</th><th>시설번호</th><th>필수 측정 물질</th></tr></thead>
+            <div class="modal-header bg-primary text-white py-2">
+                <h6 class="modal-title fw-bold">당월 측정항목 상세 (제출용)</h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-3">
+                <div class="d-flex gap-2 mb-3 border-bottom pb-3">
+                    <button class="btn btn-sm btn-outline-primary" onclick="filterDueModal('all')">전체 ({{ due_this_month.total }})</button>
+                    <button class="btn btn-sm btn-outline-success" onclick="filterDueModal('정상')">정상 ({{ due_this_month.normal }})</button>
+                    <button class="btn btn-sm btn-outline-warning" onclick="filterDueModal('사내초과')">사내초과 ({{ due_this_month.internal_exceed }})</button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="filterDueModal('법적초과')">법적초과 ({{ due_this_month.legal_exceed }})</button>
+                    <button class="btn btn-sm btn-outline-dark" onclick="filterDueModal('미측정')">미측정 ({{ due_this_month.missing_count }})</button>
+                </div>
+                <div class="table-responsive" style="max-height: 60vh;">
+                    <table class="table table-sm table-hover mb-0 small align-middle" id="dueMonthTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th>시설</th>
+                                <th>물질</th>
+                                <th class="text-center">상태</th>
+                                <th class="text-end">농도</th>
+                                <th class="text-center">기준 (사내/법적)</th>
+                                <th class="text-center">측정일</th>
+                            </tr>
+                        </thead>
                         <tbody>
-                            {% for item in compliance_report %}<tr class="table-danger-light"><td class="fw-bold text-dark">{{ item.facility_sec }}</td><td class="text-muted small">{{ item.facility_no }}</td><td><span class="badge border text-danger bg-white">{{ item.substance_name }}</span></td></tr>
-                            {% empty %}<tr><td colspan="3" class="py-5 text-muted text-center">누락된 항목이 없습니다!</td></tr>{% endfor %}
+                            {% for item in due_this_month.completed_list %}
+                            <tr data-status="{{ item.log.substance_status }}">
+                                <td><div class="fw-bold">{{ item.config.facility.sec }}</div><div class="text-muted small">{{ item.config.facility.facility_no }}</div></td>
+                                <td>{{ item.config.substance.name }}</td>
+                                <td class="text-center">
+                                    {% if item.log.substance_status == '법적초과' %}<span class="badge bg-danger">법적초과</span>
+                                    {% elif item.log.substance_status == '사내초과' %}<span class="badge bg-warning text-dark">사내초과</span>
+                                    {% else %}<span class="badge bg-success">정상</span>{% endif %}
+                                </td>
+                                <td class="text-end fw-bold">{{ item.log.value }}</td>
+                                <td class="text-center">{{ item.config.substance.val1|default:"-" }} / {{ item.config.substance.val2|default:"-" }}</td>
+                                <td class="text-center">{{ item.log.date|date:"Y-m-d" }}</td>
+                            </tr>
+                            {% endfor %}
+                            {% for item in due_this_month.missing_list %}
+                            <tr data-status="미측정">
+                                <td><div class="fw-bold">{{ item.config.facility.sec }}</div><div class="text-muted small">{{ item.config.facility.facility_no }}</div></td>
+                                <td>{{ item.config.substance.name }}</td>
+                                <td class="text-center"><span class="badge bg-dark">미측정</span></td>
+                                <td class="text-end">-</td>
+                                <td class="text-center">{{ item.config.substance.val1|default:"-" }} / {{ item.config.substance.val2|default:"-" }}</td>
+                                <td class="text-center">-</td>
+                            </tr>
+                            {% endfor %}
                         </tbody>
                     </table>
                 </div>
             </div>
-            <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button></div>
         </div>
     </div>
 </div>
 
-<div class="modal fade" id="completedModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
-        <div class="modal-content border-0 shadow-lg">
-            <div class="modal-header bg-success text-white py-3"><h5 class="modal-title fw-bold"><i class="bi bi-check-circle me-2"></i>측정 완료 상세 현황</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
-            <div class="modal-body p-0">
-                <div class="p-3 bg-light border-bottom"><small class="text-muted">측정된 데이터 중 기준치 초과 여부를 분석한 결과입니다.</small></div>
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle text-center mb-0" style="font-size: 0.85rem;">
-                        <thead class="table-light sticky-top"><tr><th>시설명</th><th>물질</th><th>최근 측정 농도</th><th>상태</th></tr></thead>
-                        <tbody>
-                            {% for log in completed_logs_detail %}<tr><td>{{ log.facility_sec }}</td><td><span class="badge border text-dark bg-white fw-normal">{{ log.substance_name }}</span></td><td class="fw-bold text-primary">{{ log.value }}</td><td><span class="{{ log.status_cls }}">{{ log.status_tag }}</span></td></tr>{% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button></div>
-        </div>
-    </div>
-</div>
+<div id="loadingOverlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(255,255,255,0.7); z-index:10000; align-items:center; justify-content:center; flex-direction:column;"><div class="spinner-border text-primary mb-2"></div><h6 class="fw-bold text-secondary">데이터 분석 중...</h6></div>
+<div id="validationModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;"><div class="bg-white p-4 rounded shadow-lg" style="width:90%; max-height:85vh; overflow-y:auto;"><h5 class="fw-bold border-bottom pb-3 mb-3">엑셀 검증 리포트</h5><div id="validationSummary" class="mb-3"></div><div class="table-responsive"><table class="table table-sm table-hover align-middle small"><thead class="table-light"><tr><th>No</th><th>시설</th><th>물질</th><th>농도</th><th>법적/참고</th><th>농도초과여부</th><th>풍량초과여부</th></tr></thead><tbody id="validationTableBody"></tbody></table></div><div class="text-end mt-4"><button onclick="closeModal()" class="btn btn-secondary me-2">취소</button><button onclick="submitFinalData()" class="btn btn-success px-4">최종 저장하기</button></div></div></div>
 
-<div id="loadingOverlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(255,255,255,0.7); z-index:10000; align-items:center; justify-content:center; flex-direction:column;">
-    <div class="spinner-border text-primary mb-2"></div><h6 class="fw-bold text-secondary">데이터 분석 중...</h6>
-</div>
-<div id="sheetModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9998; align-items:center; justify-content:center;"><div class="bg-white p-4 rounded-4 shadow" style="width:400px;"><h5 class="fw-bold mb-3 border-bottom pb-2">시트 선택</h5><div id="sheetList" class="d-grid gap-2"></div></div></div>
-<div id="validationModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;"><div class="bg-white p-4 rounded-4 shadow" style="width:90%; max-width:1300px; max-height:85vh; overflow-y:auto;"><div class="d-flex justify-content-between align-items-center border-bottom pb-3 mb-3"><h5 class="fw-bold mb-0">상세 검증 리포트 확인</h5><div id="validationSummary" class="d-flex gap-2"></div></div><div id="missingEntries" class="alert alert-warning d-none"><h6 class="fw-bold small mb-1">미측정 필수 항목 알림</h6><div id="missingList" class="row g-1 small"></div></div><div class="table-responsive border rounded"><table class="table table-hover align-middle mb-0" style="font-size:0.8rem; white-space:nowrap;"><thead class="table-light"><tr><th>No</th><th>설비명</th><th>일시</th><th>물질</th><th>농도</th><th>기상/풍량</th><th>배출량</th><th>검증상태</th></tr></thead><tbody id="validationTableBody"></tbody></table></div><div class="text-end mt-4"><button onclick="closeModal()" class="btn btn-outline-secondary px-4 me-2">취소</button><button onclick="submitFinalData()" class="btn btn-success px-5 fw-bold shadow-sm">데이터 최종 저장</button></div></div></div>
-
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="{% static 'js/excel_validator.js' %}"></script>
 <script>
-    function openComplianceModal() { bootstrap.Modal.getOrCreateInstance(document.getElementById('complianceModal')).show(); }
-    function openCompletedModal() { bootstrap.Modal.getOrCreateInstance(document.getElementById('completedModal')).show(); }
-    function exportToExcel() {
-        const table = document.getElementById("logTable");
-        let html = table.outerHTML;
-        window.open('data:application/vnd.ms-excel,' + encodeURIComponent(html));
+    function openDueThisMonthModal() { new bootstrap.Modal(document.getElementById('dueThisMonthModal')).show(); }
+    function filterDueModal(status) {
+        document.querySelectorAll('#dueMonthTable tbody tr').forEach(row => {
+            row.style.display = (status === 'all' || row.dataset.status === status) ? '' : 'none';
+        });
     }
+    function toggleAllSubstances(source) { document.querySelectorAll('.sub-check').forEach(cb => cb.checked = source.checked); }
+
+    // RAW 데이터 탭 전용 검색 필터 (실시간)
+    function filterRawTable() {
+        const input = document.getElementById('raw-search').value.toLowerCase();
+        const rows = document.querySelectorAll('#rawTable tbody tr');
+        rows.forEach(row => {
+            row.style.display = row.innerText.toLowerCase().includes(input) ? '' : 'none';
+        });
+    }
+
+    // Chart 렌더링 및 탭/필터 상태 관리
+    document.addEventListener('DOMContentLoaded', function() {
+        // Chart 렌더링
+        {% for line_name, data in chart_data.items %}
+        const ctx{{ forloop.counter }} = document.getElementById('chart-{{ forloop.counter }}').getContext('2d');
+        if (ctx{{ forloop.counter }}) {
+            new Chart(ctx{{ forloop.counter }}, {
+                type: 'scatter',
+                data: {
+                    labels: {{ data.labels|safe }},
+                    datasets: [
+                        { label: '측정 농도', data: {{ data.values_scatter|safe }}, backgroundColor: '#0d6efd', pointRadius: 6 },
+                        { label: '법적 기준', data: {{ data.legal_line|safe }}, borderColor: '#dc3545', borderWidth: 2, borderDash: [5, 5], type: 'line', pointRadius: 0, fill: false },
+                        { label: '사내 기준', data: {{ data.internal_line|safe }}, borderColor: '#ffc107', borderWidth: 2, type: 'line', pointRadius: 0, fill: false }
+                    ]
+                },
+                options: { 
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { 
+                        x: { type: 'category', labels: {{ data.labels|safe }}, grid: { display: false } }, 
+                        y: { beginAtZero: true, grid: { color: '#f0f0f0' } } 
+                    },
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } }
+                }
+            });
+        }
+        {% endfor %}
+
+        // 탭 클릭 시 년/월/탭 정보 포함하여 URL 변경 (새로고침 방식)
+        const tabButtons = document.querySelectorAll('button[data-bs-toggle="tab"]');
+        tabButtons.forEach(button => {
+            button.addEventListener('click', function(event) {
+                event.preventDefault(); // 기본 탭 전환 동작 중지
+
+                const tabId = this.getAttribute('data-bs-target').substring(1);
+                const currentYear = '{{ selected_year }}';
+                const currentMonth = '{{ selected_month }}';
+
+                const url = new URL(window.location);
+                url.searchParams.set('tab', tabId);
+                url.searchParams.set('year', currentYear);
+                url.searchParams.set('month', currentMonth);
+
+                window.location.href = url.href;
+            });
+        });
+
+        // 년/월 필터 변경 시 자동 제출
+        document.querySelectorAll('.auto-submit-filter').forEach(select => {
+            select.addEventListener('change', function() {
+                this.form.submit();
+            });
+        });
+    });
 </script>
 
 <style>
-    .table-danger-light { background-color: #fff5f5 !important; }
-    .sticky-top { top: -1px; z-index: 10; background: white; }
-    .card { overflow: hidden; }
-    .card-hover-effect:hover { transform: translateY(-3px); transition: 0.3s; box-shadow: 0 10px 20px rgba(0,0,0,0.1) !important; }
+    /* ... (style block remains the same) ... */
 </style>
 {% endblock %}
