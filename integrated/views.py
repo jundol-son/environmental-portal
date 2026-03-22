@@ -64,9 +64,11 @@ def dashboard_page(request):
             
     annual_completion_rate = round((annual_completed_count / annual_total_required * 100), 1) if annual_total_required > 0 else 0
 
-    # 3. 당월 측정 현황 계산 (법적, 제출용 기준)
+    # 3. 당월 측정 현황 계산 (법적, 제출용 기준) + 풍량 상태 추가
     due_this_month = {
-        'total': 0, 'completed': 0, 'normal': 0, 'internal_exceed': 0, 'legal_exceed': 0,
+        'total': 0, 'completed': 0, 'normal': 0, 
+        'conc_internal_exceed': 0, 'conc_legal_exceed': 0,
+        'af_internal_exceed': 0, 'af_legal_exceed': 0,
         'missing_list': [], 'completed_list': []
     }
     
@@ -88,10 +90,23 @@ def dashboard_page(request):
             
             if log:
                 due_this_month['completed'] += 1
-                status = log.substance_status
-                if status == '정상': due_this_month['normal'] += 1
-                elif status == '사내초과': due_this_month['internal_exceed'] += 1
-                elif status == '법적초과': due_this_month['legal_exceed'] += 1
+                
+                # 농도 상태 집계
+                if log.substance_status == '사내초과':
+                    due_this_month['conc_internal_exceed'] += 1
+                elif log.substance_status == '법적초과':
+                    due_this_month['conc_legal_exceed'] += 1
+                
+                # 풍량 상태 집계
+                if log.airflow_status == '사내초과':
+                    due_this_month['af_internal_exceed'] += 1
+                elif log.airflow_status == '법적초과':
+                    due_this_month['af_legal_exceed'] += 1
+                
+                # 둘 다 정상일 때만 정상으로 집계
+                if log.substance_status == '정상' and log.airflow_status == '정상':
+                    due_this_month['normal'] += 1
+                    
                 due_this_month['completed_list'].append({'config': config, 'log': log})
             else:
                 due_this_month['missing_list'].append({'config': config})
@@ -118,22 +133,100 @@ def dashboard_page(request):
 
     due_this_month['missing_count'] = len(due_this_month['missing_list'])
     due_this_month['completion_rate'] = round((due_this_month['completed'] / due_this_month['total'] * 100), 1) if due_this_month['total'] > 0 else 0
+    due_this_month['conc_total_exceed'] = due_this_month['conc_internal_exceed'] + due_this_month['conc_legal_exceed']
+    due_this_month['af_total_exceed'] = due_this_month['af_internal_exceed'] + due_this_month['af_legal_exceed']
 
-    # 4. 차트 데이터 가공
+    # 모달 필터용 전체 초과 건수 계산 (중복제거)
+    overall_internal_exceed = 0
+    overall_legal_exceed = 0
+    for item in due_this_month['completed_list']:
+        log = item['log']
+        is_legal_exceed = log.substance_status == '법적초과' or log.airflow_status == '법적초과'
+        is_internal_exceed = log.substance_status == '사내초과' or log.airflow_status == '사내초과'
+
+        if is_legal_exceed:
+            overall_legal_exceed += 1
+        elif is_internal_exceed:
+            overall_internal_exceed += 1
+            
+    due_this_month['overall_internal_exceed'] = overall_internal_exceed
+    due_this_month['overall_legal_exceed'] = overall_legal_exceed
+
+    # 4. 차트 데이터 가공 (물질별 그룹핑 및 스타일링)
     chart_qs = logs_qs
     if selected_substances:
         chart_qs = chart_qs.filter(Q(substance__name__in=selected_substances) | Q(raw_substance_name__in=selected_substances))
+    
     chart_data = {}
     lines = chart_qs.values_list('facility__line', flat=True).distinct()
+    
+    # 물질별 색상 팔레트
+    colors = ['#0d6efd', '#198754', '#6f42c1', '#fd7e14', '#20c997', '#d63384', '#ffc107', '#dc3545']
+    color_map = {sub_name: colors[i % len(colors)] for i, sub_name in enumerate(selected_substances)}
+
     for line in lines:
         line_name = line if line else "라인 미지정"
         line_logs = chart_qs.filter(facility__line=line).order_by('facility__sec')
+        
         if line_logs.exists():
+            # 해당 라인의 모든 설비(SEC)를 X축 레이블로 사용
+            all_labels = sorted(list(line_logs.values_list('facility__sec', flat=True).distinct()))
+            datasets = []
+            
+            for sub_name in selected_substances:
+                sub_logs = line_logs.filter(Q(substance__name=sub_name) | Q(raw_substance_name=sub_name))
+                if not sub_logs.exists():
+                    continue
+
+                color = color_map.get(sub_name, '#6c757d') # color_map에 없는 경우 기본값
+                
+                # 물질의 기준값을 찾기 위해 대표 로그 하나를 선택
+                rep_log = sub_logs.filter(substance__isnull=False).first()
+                if not rep_log: continue
+
+                val1 = rep_log.substance.val1
+                val2 = rep_log.substance.val2
+                
+                # 1. 측정값 (점 형태)
+                datasets.append({
+                    'label': f'{sub_name} 측정값',
+                    'data': [{'x': log.facility.sec, 'y': log.value} for log in sub_logs],
+                    'backgroundColor': color,
+                    'type': 'scatter',
+                    'pointRadius': 6,
+                    'order': 0 # 선보다 위에 표시
+                })
+                
+                # 2. 사내기준 (점선)
+                if val1 is not None:
+                    datasets.append({
+                        'label': f'{sub_name} 사내기준',
+                        'data': [{'x': label, 'y': val1} for label in all_labels],
+                        'borderColor': color,
+                        'borderWidth': 2,
+                        'type': 'line',
+                        'borderDash': [5, 5],
+                        'pointRadius': 0,
+                        'fill': False,
+                        'order': 1
+                    })
+
+                # 3. 법적기준 (실선)
+                if val2 is not None:
+                    datasets.append({
+                        'label': f'{sub_name} 법적기준',
+                        'data': [{'x': label, 'y': val2} for label in all_labels],
+                        'borderColor': color,
+                        'borderWidth': 2.5,
+                        'type': 'line',
+                        'pointRadius': 0,
+                        'fill': False,
+                        'order': 2
+                    })
+
             chart_data[line_name] = {
-                'labels': [log.facility.sec for log in line_logs],
-                'values_scatter': [{'x': log.facility.sec, 'y': log.value} for log in line_logs],
-                'legal_line': [{'x': log.facility.sec, 'y': log.substance.val2 if log.substance else 0} for log in line_logs],
-                'internal_line': [{'x': log.facility.sec, 'y': log.substance.val1 if log.substance else 0} for log in line_logs],
+                'labels': all_labels,
+                'datasets': json.dumps(datasets)
             }
             
     # 5. 레거시 통계 (UI에서 제거되어 계산 불필요)

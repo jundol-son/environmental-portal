@@ -35,7 +35,7 @@ class ChemicalsConfig(AppConfig):
         scheduler.add_job(
                     scheduled_task, 
                     'interval', 
-                    hours=1, 
+                    hours=500, 
                     id='nics_crawl_job',
                     replace_existing=True # 중복 실행 방지
                 )

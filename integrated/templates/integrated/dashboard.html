@@ -43,10 +43,12 @@
                         <h6 class="text-primary small mb-2">당월 측정항목 (제출용)</h6>
                         <h2 class="fw-bold text-primary mb-1">{{ due_this_month.total }} 건</h2>
                         <div class="small">이행률: {{ due_this_month.completion_rate }}% ({{ due_this_month.completed }}/{{ due_this_month.total }})</div>
-                        <div class="small mt-1">
-                            <span class="badge bg-success-subtle text-success border border-success-subtle">정상 {{ due_this_month.normal }}</span> 
-                            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">사내 {{ due_this_month.internal_exceed }}</span>
-                            <span class="badge bg-danger-subtle text-danger-emphasis border border-danger-subtle">법적 {{ due_this_month.legal_exceed }}</span>
+                        <div class="small mt-1 d-flex justify-content-center flex-wrap gap-1">
+                            <span class="badge bg-success-subtle text-success border border-success-subtle">정상 {{ due_this_month.normal }}</span>
+                            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle" title="농도 사내기준 초과">농도 사내 {{ due_this_month.conc_internal_exceed }}</span>
+                            <span class="badge bg-danger-subtle text-danger-emphasis border border-danger-subtle" title="농도 법적기준 초과">농도 법적 {{ due_this_month.conc_legal_exceed }}</span>
+                            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle" title="풍량 사내기준 초과(90% 근접)">풍량 사내 {{ due_this_month.af_internal_exceed }}</span>
+                            <span class="badge bg-danger-subtle text-danger-emphasis border border-danger-subtle" title="풍량 법적기준 초과(용량 초과)">풍량 법적 {{ due_this_month.af_legal_exceed }}</span>
                         </div>
                     </div>
                 </div>
@@ -268,44 +270,72 @@
                 <div class="d-flex gap-2 mb-3 border-bottom pb-3">
                     <button class="btn btn-sm btn-outline-primary" onclick="filterDueModal('all')">전체 ({{ due_this_month.total }})</button>
                     <button class="btn btn-sm btn-outline-success" onclick="filterDueModal('정상')">정상 ({{ due_this_month.normal }})</button>
-                    <button class="btn btn-sm btn-outline-warning" onclick="filterDueModal('사내초과')">사내초과 ({{ due_this_month.internal_exceed }})</button>
-                    <button class="btn btn-sm btn-outline-danger" onclick="filterDueModal('법적초과')">법적초과 ({{ due_this_month.legal_exceed }})</button>
+                    <button class="btn btn-sm btn-outline-warning" onclick="filterDueModal('사내초과')">사내초과 ({{ due_this_month.overall_internal_exceed|default:0 }})</button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="filterDueModal('법적초과')">법적초과 ({{ due_this_month.overall_legal_exceed|default:0 }})</button>
                     <button class="btn btn-sm btn-outline-dark" onclick="filterDueModal('미측정')">미측정 ({{ due_this_month.missing_count }})</button>
                 </div>
                 <div class="table-responsive" style="max-height: 60vh;">
                     <table class="table table-sm table-hover mb-0 small align-middle" id="dueMonthTable">
-                        <thead class="table-light">
+                        <thead class="table-light" style="white-space:nowrap">
                             <tr>
-                                <th>시설</th>
-                                <th>물질</th>
-                                <th class="text-center">상태</th>
+                                <th>시설/물질</th>
+                                <th class="text-center">종합상태</th>
+                                <th class="text-center">농도상태</th>
                                 <th class="text-end">농도</th>
-                                <th class="text-center">기준 (사내/법적)</th>
+                                <th class="text-center">농도기준(사내/법적)</th>
+                                <th class="text-center">풍량상태</th>
+                                <th class="text-end">풍량(m³/min)</th>
+                                <th class="text-center">풍량기준(90%/100%)</th>
                                 <th class="text-center">측정일</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for item in due_this_month.completed_list %}
-                            <tr data-status="{{ item.log.substance_status }}">
-                                <td><div class="fw-bold">{{ item.config.facility.sec }}</div><div class="text-muted small">{{ item.config.facility.facility_no }}</div></td>
-                                <td>{{ item.config.substance.name }}</td>
+                                {% define '정상' as overall_status %}
+                                {% if item.log.substance_status == '법적초과' or item.log.airflow_status == '법적초과' %}
+                                    {% define '법적초과' as overall_status %}
+                                {% elif item.log.substance_status == '사내초과' or item.log.airflow_status == '사내초과' %}
+                                    {% define '사내초과' as overall_status %}
+                                {% endif %}
+                            <tr data-status="{{ overall_status }}">
+                                <td><div class="fw-bold">{{ item.config.facility.sec }}</div><div class="text-muted small">{{ item.config.substance.name }}</div></td>
                                 <td class="text-center">
-                                    {% if item.log.substance_status == '법적초과' %}<span class="badge bg-danger">법적초과</span>
-                                    {% elif item.log.substance_status == '사내초과' %}<span class="badge bg-warning text-dark">사내초과</span>
+                                    {% if overall_status == '법적초과' %}<span class="badge bg-danger">법적초과</span>
+                                    {% elif overall_status == '사내초과' %}<span class="badge bg-warning text-dark">사내초과</span>
                                     {% else %}<span class="badge bg-success">정상</span>{% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if item.log.substance_status == '법적초과' %}<span class="badge bg-danger-subtle text-danger-emphasis border border-danger-subtle">법적</span>
+                                    {% elif item.log.substance_status == '사내초과' %}<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">사내</span>
+                                    {% else %}<span class="badge bg-success-subtle text-success border border-success-subtle">정상</span>{% endif %}
                                 </td>
                                 <td class="text-end fw-bold">{{ item.log.value }}</td>
                                 <td class="text-center">{{ item.config.substance.val1|default:"-" }} / {{ item.config.substance.val2|default:"-" }}</td>
+                                <td class="text-center">
+                                    {% if item.log.airflow_status == '법적초과' %}<span class="badge bg-danger-subtle text-danger-emphasis border border-danger-subtle">초과</span>
+                                    {% elif item.log.airflow_status == '사내초과' %}<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">근접</span>
+                                    {% else %}<span class="badge bg-success-subtle text-success border border-success-subtle">정상</span>{% endif %}
+                                </td>
+                                <td class="text-end fw-bold">{{ item.log.air_flow|default:"0" }}</td>
+                                <td class="text-center">
+                                    {% with ncmm=item.config.facility.capacity_ncmm|default:0 acmm=item.config.facility.capacity_acmm|default:0 %}
+                                        {% if ncmm > acmm %}{% define ncmm as capacity %}{% else %}{% define acmm as capacity %}{% endif %}
+                                        {{ capacity|multiply:0.9|floatformat:1 }} / {{ capacity|floatformat:1 }}
+                                    {% endwith %}
+                                </td>
                                 <td class="text-center">{{ item.log.date|date:"Y-m-d" }}</td>
                             </tr>
                             {% endfor %}
                             {% for item in due_this_month.missing_list %}
                             <tr data-status="미측정">
-                                <td><div class="fw-bold">{{ item.config.facility.sec }}</div><div class="text-muted small">{{ item.config.facility.facility_no }}</div></td>
-                                <td>{{ item.config.substance.name }}</td>
+                                <td><div class="fw-bold">{{ item.config.facility.sec }}</div><div class="text-muted small">{{ item.config.substance.name }}</div></td>
                                 <td class="text-center"><span class="badge bg-dark">미측정</span></td>
+                                <td class="text-center">-</td>
                                 <td class="text-end">-</td>
                                 <td class="text-center">{{ item.config.substance.val1|default:"-" }} / {{ item.config.substance.val2|default:"-" }}</td>
+                                <td class="text-center">-</td>
+                                <td class="text-end">-</td>
+                                <td class="text-center">-</td>
                                 <td class="text-center">-</td>
                             </tr>
                             {% endfor %}
@@ -342,19 +372,15 @@
 
     // Chart 렌더링 및 탭/필터 상태 관리
     document.addEventListener('DOMContentLoaded', function() {
-        // Chart 렌더링
+        // Chart 렌더링 (물질별 그룹핑)
         {% for line_name, data in chart_data.items %}
         const ctx{{ forloop.counter }} = document.getElementById('chart-{{ forloop.counter }}').getContext('2d');
-        if (ctx{{ forloop.counter }}) {
+        if (ctx{{ forloop.counter }} && {{ data.datasets|safe }}.length > 0) {
             new Chart(ctx{{ forloop.counter }}, {
-                type: 'scatter',
+                type: 'line', // 기본 타입. 각 데이터셋에서 scatter/line으로 오버라이드
                 data: {
                     labels: {{ data.labels|safe }},
-                    datasets: [
-                        { label: '측정 농도', data: {{ data.values_scatter|safe }}, backgroundColor: '#0d6efd', pointRadius: 6 },
-                        { label: '법적 기준', data: {{ data.legal_line|safe }}, borderColor: '#dc3545', borderWidth: 2, borderDash: [5, 5], type: 'line', pointRadius: 0, fill: false },
-                        { label: '사내 기준', data: {{ data.internal_line|safe }}, borderColor: '#ffc107', borderWidth: 2, type: 'line', pointRadius: 0, fill: false }
-                    ]
+                    datasets: {{ data.datasets|safe }}
                 },
                 options: { 
                     responsive: true,
@@ -363,7 +389,15 @@
                         x: { type: 'category', labels: {{ data.labels|safe }}, grid: { display: false } }, 
                         y: { beginAtZero: true, grid: { color: '#f0f0f0' } } 
                     },
-                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } }
+                    plugins: { 
+                        legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
+                        tooltip: { mode: 'index', intersect: false }
+                    },
+                    interaction: {
+                        mode: 'nearest',
+                        axis: 'x',
+                        intersect: false
+                    }
                 }
             });
         }
