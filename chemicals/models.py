@@ -1,5 +1,6 @@
+from django.conf import settings
 from django.db import models
-import re
+from django.utils import timezone
 
 class NicsNotice(models.Model):
     post_id = models.CharField(max_length=20, unique=True, verbose_name="고유ID")
@@ -40,3 +41,88 @@ class NicsNotice(models.Model):
                     'link': link_part
                 })
         return files
+
+
+class HandlerProfile(models.Model):
+    knoxid = models.CharField(max_length=100, unique=True, verbose_name="KNOX ID")
+    name = models.CharField(max_length=100, verbose_name="이름")
+    department = models.CharField(max_length=200, verbose_name="부서")
+    is_active = models.BooleanField(default=True, verbose_name="교육 대상")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["department", "name"]
+        verbose_name = "취급자교육 대상자"
+        verbose_name_plural = "취급자교육 대상자"
+
+    def __str__(self):
+        return f"{self.name} ({self.knoxid})"
+
+
+class TrainingCompletion(models.Model):
+    handler = models.ForeignKey(
+        HandlerProfile,
+        on_delete=models.CASCADE,
+        related_name="training_completions",
+        verbose_name="대상자",
+    )
+    target_year = models.PositiveSmallIntegerField(verbose_name="대상 연도")
+    is_completed = models.BooleanField(default=False, verbose_name="수료 여부")
+    completion_code = models.TextField(blank=True, verbose_name="수료코드")
+    completed_at = models.DateTimeField(blank=True, null=True, verbose_name="수료 처리 시각")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["handler", "target_year"],
+                name="unique_handler_training_year",
+            )
+        ]
+        ordering = ["-target_year", "handler__department", "handler__name"]
+        verbose_name = "취급자교육 수료 현황"
+        verbose_name_plural = "취급자교육 수료 현황"
+
+    def __str__(self):
+        return f"{self.handler} - {self.target_year}"
+
+    def save(self, *args, **kwargs):
+        self.completion_code = self.completion_code.strip()
+        self.is_completed = bool(self.completion_code)
+        if self.is_completed and not self.completed_at:
+            self.completed_at = timezone.now()
+        elif not self.is_completed:
+            self.completed_at = None
+        if kwargs.get("update_fields") is not None:
+            kwargs["update_fields"] = set(kwargs["update_fields"]) | {
+                "completion_code",
+                "is_completed",
+                "completed_at",
+            }
+        super().save(*args, **kwargs)
+
+
+class CompletionSubmissionLog(models.Model):
+    completion = models.ForeignKey(
+        TrainingCompletion,
+        on_delete=models.CASCADE,
+        related_name="submission_logs",
+        verbose_name="수료 기록",
+    )
+    submitted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        verbose_name="제출자",
+    )
+    completion_code = models.TextField(verbose_name="제출 수료코드")
+    submitted_at = models.DateTimeField(auto_now_add=True, verbose_name="제출 시각")
+
+    class Meta:
+        ordering = ["-submitted_at"]
+        verbose_name = "수료코드 제출 이력"
+        verbose_name_plural = "수료코드 제출 이력"
+
+    def __str__(self):
+        return f"{self.completion} - {self.submitted_at:%Y-%m-%d %H:%M}"

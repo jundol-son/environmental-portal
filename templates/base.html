@@ -129,16 +129,21 @@
                             </span>
                             <i class="bi bi-chevron-down small"></i>
                         </a>
-                        
+
                         <ul class="collapse {% if '/chemicals/' in request.path or '/nics/' in request.path %}show{% endif %} list-unstyled ps-3" id="chemicalSubmenu">
                             <li>
-                                <a href="{% url 'chemical_check' %}" class="nav-link small {% if '/chemicals/' in request.path %}text-info{% else %}text-white-50{% endif %}">
+                                <a href="{% url 'chemical_check' %}" class="nav-link small {% if request.resolver_match.url_name == 'chemical_check' %}text-info{% else %}text-white-50{% endif %}">
                                     - 화관법 자가진단
                                 </a>
                             </li>
                             <li>
                                 <a href="{% url 'nics_notice_list' %}" class="nav-link small {% if '/nics/' in request.path %}text-info{% else %}text-white-50{% endif %}">
                                     - 안전원 고시/공고
+                                </a>
+                            </li>
+                            <li>
+                                <a href="{% url 'training_dashboard' %}" class="nav-link small {% if request.resolver_match.url_name == 'training_dashboard' or request.resolver_match.url_name == 'training_upload' or request.resolver_match.url_name == 'training_export_csv' or request.resolver_match.url_name == 'training_submit' %}text-info{% else %}text-white-50{% endif %}">
+                                    - 취급자 교육 관리
                                 </a>
                             </li>
                         </ul>

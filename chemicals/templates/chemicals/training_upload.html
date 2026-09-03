@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+
+{% block title %}취급자교육 대상자 엑셀 업데이트{% endblock %}
+
+{% block content %}
+<div class="card border-0 shadow-sm" style="max-width: 760px;">
+    <div class="card-body p-4">
+        <p class="text-muted">첫 행에 <code>knoxid</code>, <code>이름</code>, <code>부서</code> 열이 있는 .xlsx 파일을 사용하세요. 파일에 없는 기존 대상자는 유지됩니다.</p>
+        <form method="post" enctype="multipart/form-data" novalidate>
+            {% csrf_token %}
+            {% for field in form %}
+                <div class="mb-3">
+                    <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% for error in field.errors %}<div class="text-danger small mt-1">{{ error }}</div>{% endfor %}
+                </div>
+            {% endfor %}
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary">대상자 업데이트</button>
+                <a href="{% url 'training_dashboard' %}" class="btn btn-outline-secondary">취소</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

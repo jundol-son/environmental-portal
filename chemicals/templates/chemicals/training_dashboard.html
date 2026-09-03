@@ -1,0 +1,182 @@
+{% extends 'base.html' %}
+
+{% block title %}취급자 교육 관리{% endblock %}
+
+{% block content %}
+{% if messages %}
+    {% for message in messages %}
+        <div class="alert alert-{{ message.tags|default:'info' }}" role="alert">{{ message }}</div>
+    {% endfor %}
+{% endif %}
+
+{% if not can_manage %}
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+        {% if viewer_profile %}
+            <div class="text-muted small mb-1">내 교육 대상 정보</div>
+            <strong>{{ viewer_profile.name }}</strong>
+            <span class="ms-2">knoxid: {{ viewer_profile.knoxid }}</span>
+            <span class="ms-2">부서: {{ viewer_profile.department }}</span>
+        {% else %}
+            <div class="text-muted">knoxid <strong>{{ viewer_knoxid }}</strong>와 일치하는 활성 교육 대상자가 없습니다.</div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<div class="d-flex justify-content-end gap-2 mb-3">
+    {% if can_manage %}
+        <a href="{% url 'training_upload' %}" class="btn btn-outline-primary">
+            <i class="bi bi-file-earmark-arrow-up"></i> 엑셀 대량 업데이트
+        </a>
+        <a href="{% url 'training_export_csv' %}?year={{ target_year }}&department={{ selected_department|urlencode }}&name={{ selected_name|urlencode }}&status={{ selected_status }}" class="btn btn-success">
+            <i class="bi bi-download"></i> CSV 내보내기
+        </a>
+    {% endif %}
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body"><div class="text-muted small">전체 대상자</div><div class="fs-3 fw-bold">{{ total_count }}</div></div></div></div>
+    <div class="col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body"><div class="text-muted small">수료자</div><div class="fs-3 fw-bold text-success">{{ completed_count }}</div></div></div></div>
+    <div class="col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body"><div class="text-muted small">미수료자</div><div class="fs-3 fw-bold text-danger">{{ pending_count }}</div></div></div></div>
+    <div class="col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body"><div class="text-muted small">수료율</div><div class="fs-3 fw-bold text-primary">{{ completion_rate }}%</div></div></div></div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-2">
+                <label for="year" class="form-label">대상 연도</label>
+                <select id="year" name="year" class="form-select">
+                    {% for year in years %}
+                        <option value="{{ year }}" {% if year == target_year %}selected{% endif %}>{{ year }}년</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% if can_manage %}
+                <div class="col-md-2">
+                    <label for="department" class="form-label">부서</label>
+                    <select id="department" name="department" class="form-select">
+                        <option value="">전체 부서</option>
+                        {% for department in departments %}
+                            <option value="{{ department }}" {% if department == selected_department %}selected{% endif %}>{{ department }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="name" class="form-label">대상자 이름</label>
+                    <input id="name" name="name" class="form-control" value="{{ selected_name }}" placeholder="이름 검색">
+                </div>
+            {% endif %}
+            <div class="col-md-2">
+                <label for="status" class="form-label">수료 상태</label>
+                <select id="status" name="status" class="form-select">
+                    <option value="">전체 상태</option>
+                    <option value="completed" {% if selected_status == 'completed' %}selected{% endif %}>수료</option>
+                    <option value="pending" {% if selected_status == 'pending' %}selected{% endif %}>미수료</option>
+                </select>
+            </div>
+            <div class="col-md-3 d-flex gap-2">
+                <button class="btn btn-primary flex-grow-1" type="submit">조회</button>
+                <a class="btn btn-outline-secondary" href="{% url 'training_dashboard' %}?year={{ target_year }}">초기화</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if can_manage and department_stats %}
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white fw-bold">부서별 수료율</div>
+    <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+            <thead class="table-light"><tr><th>부서</th><th>전체</th><th>수료</th><th>수료율</th></tr></thead>
+            <tbody>
+                {% for stat in department_stats %}
+                    <tr><td>{{ stat.handler__department }}</td><td>{{ stat.total }}</td><td>{{ stat.completed }}</td><td>{{ stat.rate }}%</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<div class="card border-0 shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr><th>연도</th><th>knoxid</th><th>이름</th><th>부서</th><th>상태</th><th>수료코드</th><th>수료 처리 시각</th><th>코드 등록</th></tr>
+            </thead>
+            <tbody>
+                {% for completion in completions %}
+                    <tr>
+                        <td>{{ completion.target_year }}</td>
+                        <td>{{ completion.handler.knoxid }}</td>
+                        <td>{{ completion.handler.name }}</td>
+                        <td>{{ completion.handler.department }}</td>
+                        <td>{% if completion.is_completed %}<span class="badge bg-success">수료</span>{% else %}<span class="badge bg-secondary">미수료</span>{% endif %}</td>
+                        <td>{{ completion.completion_code|default:'-' }}</td>
+                        <td>{{ completion.completed_at|date:'Y-m-d H:i'|default:'-' }}</td>
+                        <td>
+                            <button type="button"
+                                    class="btn btn-primary btn-sm text-nowrap"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#codeModal"
+                                    data-action="{% url 'training_submit' completion.id %}"
+                                    data-name="{{ completion.handler.name }}"
+                                    data-knoxid="{{ completion.handler.knoxid }}">
+                                코드 등록
+                            </button>
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="8" class="text-center text-muted py-5">해당 연도의 교육 대상 기록이 없습니다.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if completions.paginator.num_pages > 1 %}
+<nav class="mt-3" aria-label="대상자 목록 페이지">
+    <ul class="pagination justify-content-center">
+        {% if completions.has_previous %}<li class="page-item"><a class="page-link" href="?year={{ target_year }}&department={{ selected_department|urlencode }}&name={{ selected_name|urlencode }}&status={{ selected_status }}&page={{ completions.previous_page_number }}">이전</a></li>{% endif %}
+        <li class="page-item disabled"><span class="page-link">{{ completions.number }} / {{ completions.paginator.num_pages }}</span></li>
+        {% if completions.has_next %}<li class="page-item"><a class="page-link" href="?year={{ target_year }}&department={{ selected_department|urlencode }}&name={{ selected_name|urlencode }}&status={{ selected_status }}&page={{ completions.next_page_number }}">다음</a></li>{% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+<div class="modal fade" id="codeModal" tabindex="-1" aria-labelledby="codeModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="post" id="codeRegistrationForm">
+                {% csrf_token %}
+                <div class="modal-header">
+                    <h5 class="modal-title" id="codeModalLabel">수료코드 등록</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small" id="codeTarget"></p>
+                    <label for="completionCode" class="form-label">수료코드</label>
+                    <input id="completionCode" name="completion_code" class="form-control" autocomplete="off" required>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">취소</button>
+                    <button type="submit" class="btn btn-primary">등록하고 수료 처리</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    const codeModal = document.getElementById('codeModal');
+    codeModal.addEventListener('show.bs.modal', event => {
+        const button = event.relatedTarget;
+        document.getElementById('codeRegistrationForm').action = button.dataset.action;
+        document.getElementById('codeTarget').textContent = `${button.dataset.name} (${button.dataset.knoxid})`;
+        document.getElementById('completionCode').value = '';
+    });
+    codeModal.addEventListener('shown.bs.modal', () => document.getElementById('completionCode').focus());
+</script>
+{% endblock %}
