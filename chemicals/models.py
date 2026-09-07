@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
@@ -67,9 +68,23 @@ class TrainingCompletion(models.Model):
         verbose_name="대상자",
     )
     target_year = models.PositiveSmallIntegerField(verbose_name="대상 연도")
-    is_completed = models.BooleanField(default=False, verbose_name="수료 여부")
-    completion_code = models.TextField(blank=True, verbose_name="수료코드")
-    completed_at = models.DateTimeField(blank=True, null=True, verbose_name="수료 처리 시각")
+    is_completed = models.BooleanField(default=False, verbose_name="최종 수료 여부")
+    online_completion_code = models.TextField(blank=True, verbose_name="온라인교육 수료코드")
+    online_completed_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name="온라인교육 수료 처리 시각",
+    )
+    offline_application_date = models.DateField(
+        blank=True,
+        null=True,
+        verbose_name="오프라인교육 신청일자",
+    )
+    offline_completion_date = models.DateField(
+        blank=True,
+        null=True,
+        verbose_name="오프라인교육 수료일자",
+    )
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -86,18 +101,51 @@ class TrainingCompletion(models.Model):
     def __str__(self):
         return f"{self.handler} - {self.target_year}"
 
+    @property
+    def online_completed(self):
+        return bool((self.online_completion_code or "").strip())
+
+    @property
+    def offline_completed(self):
+        return self.offline_completion_date is not None
+
+    def calculate_is_completed(self):
+        return self.online_completed and self.offline_completed
+
+    def clean(self):
+        if len((self.online_completion_code or "").strip()) > 500:
+            raise ValidationError({"online_completion_code": "수료코드는 500자 이하로 입력해 주세요."})
+        if (
+            self.offline_application_date
+            and self.offline_completion_date
+            and self.offline_completion_date < self.offline_application_date
+        ):
+            raise ValidationError(
+                {"offline_completion_date": "수료일자는 신청일자보다 빠를 수 없습니다."}
+            )
+
     def save(self, *args, **kwargs):
-        self.completion_code = self.completion_code.strip()
-        self.is_completed = bool(self.completion_code)
-        if self.is_completed and not self.completed_at:
-            self.completed_at = timezone.now()
-        elif not self.is_completed:
-            self.completed_at = None
+        normalized_code = (self.online_completion_code or "").strip()
+        previous_code = None
+        if self.pk:
+            previous_code = type(self).objects.filter(pk=self.pk).values_list(
+                "online_completion_code", flat=True
+            ).first()
+            previous_code = (previous_code or "").strip()
+
+        self.online_completion_code = normalized_code
+        if not normalized_code:
+            self.online_completed_at = None
+        elif previous_code != normalized_code or not self.online_completed_at:
+            self.online_completed_at = timezone.now()
+
+        self.is_completed = self.calculate_is_completed()
+        self.clean()
         if kwargs.get("update_fields") is not None:
             kwargs["update_fields"] = set(kwargs["update_fields"]) | {
-                "completion_code",
+                "online_completion_code",
+                "online_completed_at",
                 "is_completed",
-                "completed_at",
             }
         super().save(*args, **kwargs)
 
@@ -116,7 +164,7 @@ class CompletionSubmissionLog(models.Model):
         null=True,
         verbose_name="제출자",
     )
-    completion_code = models.TextField(verbose_name="제출 수료코드")
+    completion_code = models.TextField(blank=True, verbose_name="제출 수료코드")
     submitted_at = models.DateTimeField(auto_now_add=True, verbose_name="제출 시각")
 
     class Meta:

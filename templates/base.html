@@ -141,10 +141,14 @@
                                     - 안전원 고시/공고
                                 </a>
                             </li>
-                            <li>
-                                <a href="{% url 'training_dashboard' %}" class="nav-link small {% if request.resolver_match.url_name == 'training_dashboard' or request.resolver_match.url_name == 'training_upload' or request.resolver_match.url_name == 'training_export_csv' or request.resolver_match.url_name == 'training_submit' %}text-info{% else %}text-white-50{% endif %}">
-                                    - 취급자 교육 관리
-                                </a>
+                            <li class="mt-2">
+                                <div class="text-info small fw-bold mb-1"><i class="bi bi-mortarboard me-1"></i> 교육</div>
+                                <ul class="list-unstyled ps-2">
+                                    <li><div class="small text-white-50">취급자교육</div></li>
+                                    <li><a href="{% url 'training_status' %}" class="nav-link small py-1 {% if request.resolver_match.url_name == 'training_status' %}text-info fw-bold{% else %}text-white-50{% endif %}">- 조회</a></li>
+                                    {% if perms.chemicals.change_trainingcompletion %}<li><a href="{% url 'training_manage' %}" class="nav-link small py-1 {% if request.resolver_match.url_name == 'training_manage' or request.resolver_match.url_name == 'training_upload' or request.resolver_match.url_name == 'training_status_upload' %}text-info fw-bold{% else %}text-white-50{% endif %}">- 관리</a></li>{% endif %}
+                                    <li><a href="{% url 'worker_training' %}" class="nav-link small py-1 {% if request.resolver_match.url_name == 'worker_training' %}text-info fw-bold{% else %}text-white-50{% endif %}">종사자교육</a></li>
+                                </ul>
                             </li>
                         </ul>
                     </li>

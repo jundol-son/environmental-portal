@@ -16,12 +16,14 @@ class TrainingCompletionAdmin(admin.ModelAdmin):
         "target_year",
         "handler",
         "is_completed",
-        "completion_code",
-        "completed_at",
+        "online_completion_code",
+        "online_completed_at",
+        "offline_application_date",
+        "offline_completion_date",
     )
     list_filter = ("target_year", "is_completed", "handler__department")
-    search_fields = ("handler__knoxid", "handler__name", "completion_code")
-    readonly_fields = ("is_completed", "completed_at")
+    search_fields = ("handler__knoxid", "handler__name", "online_completion_code")
+    readonly_fields = ("is_completed", "online_completed_at")
 
 
 @admin.register(CompletionSubmissionLog)
