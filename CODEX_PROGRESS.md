@@ -338,3 +338,21 @@
 - Validation: wastes 테스트 18건 통과, staged diff check 통과, `main -> origin/main` push 성공
 - Blockers: 없음
 - Next step: 사내 PC에서 `ROO_CODE_HANDOFF/ROO_CODE_APPLY.md`를 Roo Code에 전달해 기준 커밋을 병합
+
+## Session 2026-09-29 (separated Roo Code staging)
+
+- Project: Django 환경 관리 포털
+- Working directory: `C:\Users\sjsuk\Desktop\coding\django_test`
+- Started: 2026-09-29 06:28:00 +09:00
+- Session ID: unavailable
+- Resume: `codex resume --last`
+
+### Phase F1 — test 분리형 이관 구조
+
+- Request: 기준 구현을 기존 `wastes` 폴더에 직접 섞지 않고 `test` 폴더처럼 분리해 Roo Code에 적용 요청
+- Completed: `test`를 읽기 전용 Git checkout, `internal_project`를 실제 변경 대상으로 두는 sibling-folder 구조와 Roo Code 요청문으로 지시서를 변경했다.
+- Key decisions: `test`는 Django 앱이 아니라 staging source이므로 `INSTALLED_APPS`에 등록하지 않는다. migration·테스트·서버 실행은 대상 프로젝트에서만 수행한다.
+- Changed files: `ROO_CODE_HANDOFF/ROO_CODE_APPLY.md`, `CODEX_PROGRESS.md`
+- Validation: source/target 경로 구분, 파일 대응 경로, migration 충돌 방지 및 실행 위치를 문서에서 명시
+- Blockers: 없음
+- Next step: 문서 diff 검증 후 Git commit·push
