@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+
+{% block title %}폐기물 정산 시스템 관리{% endblock %}
+
+{% block content %}
+<div class="card border-0 shadow-sm">
+    <div class="card-body">
+        <table class="table mb-0">
+            <tr><th style="width: 220px;">데이터 Adapter</th><td>{{ data_source }} <span class="badge bg-warning text-dark">개발환경</span></td></tr>
+            <tr><th>부가세율</th><td>{{ vat_rate }}</td></tr>
+            <tr><th>정산기간</th><td>전월 21일 ~ 당월 20일</td></tr>
+            <tr><th>금액 배분</th><td>Largest Remainder Method / 고정 Tie-breaker</td></tr>
+            <tr><th>보고서</th><td>개발용 임시 Template</td></tr>
+            <tr><th>Excel</th><td>정산결과 단일 Sheet</td></tr>
+            <tr><th>이메일</th><td><span class="badge bg-success">사용자 승인형</span> {{ email_backend }}{% if 'console' in email_backend %} <span class="text-muted">(개발환경: 실제 외부 발송 없음)</span>{% endif %}</td></tr>
+        </table>
+    </div>
+</div>
+{% endblock %}

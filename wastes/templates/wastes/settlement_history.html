@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ page_title|default:'정산 이력' }}{% endblock %}
+
+{% block content %}
+{% if show_filters %}
+<form class="card border-0 shadow-sm p-3 mb-3" method="get">
+    <div class="row g-2 align-items-end">
+        <div class="col-md-4"><label class="form-label">정산월</label><input class="form-control" type="month" name="month" value="{{ month_filter }}"></div>
+        <div class="col-md-4"><label class="form-label">상태</label><select class="form-select" name="status"><option value="">전체</option>{% for value, label in status_choices %}<option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+        <div class="col-md-4 d-flex gap-2"><button class="btn btn-primary flex-fill" type="submit">조회</button><a class="btn btn-outline-secondary" href="{% url 'settlement_history' %}">초기화</a></div>
+    </div>
+</form>
+<div class="row g-3 mb-3">
+    <div class="col-md-6"><div class="card border-0 shadow-sm p-3"><small>조회 건수</small><strong class="fs-4">{{ summary_count }}건</strong></div></div>
+    <div class="col-md-6"><div class="card border-0 shadow-sm p-3"><small>조회 총액</small><strong class="fs-4 text-primary">{{ summary_total|floatformat:0 }}원</strong></div></div>
+</div>
+{% endif %}
+<div class="card border-0 shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead><tr><th>정산월</th><th>정산기간</th><th>상태</th><th class="text-end">총 정산금액</th><th>최종 저장</th><th></th></tr></thead>
+            <tbody>
+                {% for settlement in settlements %}
+                <tr>
+                    <td class="fw-bold">{{ settlement.settlement_month|date:'Y-m' }}</td>
+                    <td>{{ settlement.period_start|date:'Y-m-d' }} ~ {{ settlement.period_end|date:'Y-m-d' }}</td>
+                    <td><span class="badge bg-secondary">{{ settlement.get_status_display }}</span></td>
+                    <td class="text-end">{{ settlement.total_amount|default:0|floatformat:0 }}원</td>
+                    <td>{{ settlement.updated_at|date:'Y-m-d H:i' }}</td>
+                    <td><a class="btn btn-sm btn-outline-primary" href="{% url 'settlement_detail' settlement.pk %}">상세</a></td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" class="text-center text-muted py-5">정산 이력이 없습니다.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% if show_filters and page_obj.paginator.num_pages > 1 %}
+<nav class="mt-3" aria-label="정산 이력 페이지"><ul class="pagination justify-content-center">
+    {% if page_obj.has_previous %}<li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}&month={{ month_filter }}&status={{ status_filter }}">이전</a></li>{% endif %}
+    <li class="page-item disabled"><span class="page-link">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span></li>
+    {% if page_obj.has_next %}<li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}&month={{ month_filter }}&status={{ status_filter }}">다음</a></li>{% endif %}
+</ul></nav>
+{% endif %}
+{% endblock %}

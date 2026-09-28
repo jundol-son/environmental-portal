@@ -1,0 +1,160 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ settlement.settlement_month|date:'Y년 n월' }} 폐기물 정산{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <span class="badge bg-primary fs-6">{{ settlement.get_status_display }}</span>
+        <span class="text-muted ms-2">{{ settlement.period_start|date:'Y-m-d' }} ~ {{ settlement.period_end|date:'Y-m-d' }}</span>
+    </div>
+    <a href="{% url 'settlement_home' %}" class="btn btn-outline-secondary btn-sm">정산 목록</a>
+</div>
+
+<ul class="nav nav-pills nav-fill gap-2 mb-4" id="settlement-steps" role="tablist">
+    <li class="nav-item" role="presentation"><button class="nav-link border w-100 {% if active_step == 1 %}active{% elif current_step > 1 %}text-success{% endif %}" id="step-1-tab" data-bs-toggle="pill" data-bs-target="#step-1" type="button" role="tab">1 데이터 준비</button></li>
+    <li class="nav-item" role="presentation"><button class="nav-link border w-100 {% if active_step == 2 %}active{% elif current_step > 2 %}text-success{% endif %}" id="step-2-tab" data-bs-toggle="pill" data-bs-target="#step-2" type="button" role="tab">2 업체 정산</button></li>
+    <li class="nav-item" role="presentation"><button class="nav-link border w-100 {% if active_step == 3 %}active{% elif current_step > 3 %}text-success{% endif %}" id="step-3-tab" data-bs-toggle="pill" data-bs-target="#step-3" type="button" role="tab">3 분배율 설정·배분</button></li>
+    <li class="nav-item" role="presentation"><button class="nav-link border w-100 {% if active_step == 4 %}active{% elif current_step > 4 %}text-success{% endif %}" id="step-4-tab" data-bs-toggle="pill" data-bs-target="#step-4" type="button" role="tab">4 검증·확정</button></li>
+    <li class="nav-item" role="presentation"><button class="nav-link border w-100 {% if active_step == 5 %}active{% elif current_step > 5 %}text-success{% endif %}" id="step-5-tab" data-bs-toggle="pill" data-bs-target="#step-5" type="button" role="tab">5 결과물</button></li>
+    <li class="nav-item" role="presentation"><button class="nav-link border w-100 {% if active_step == 6 %}active{% endif %}" id="step-6-tab" data-bs-toggle="pill" data-bs-target="#step-6" type="button" role="tab">6 이메일</button></li>
+</ul>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3"><div class="card border-0 shadow-sm p-3"><small>계근 데이터</small><strong class="fs-4">{{ settlement.sources.count }}건</strong></div></div>
+    <div class="col-md-3"><div class="card border-0 shadow-sm p-3"><small>총 계근량</small><strong class="fs-4">{{ totals.weight|floatformat:3 }}</strong></div></div>
+    <div class="col-md-2"><div class="card border-0 shadow-sm p-3"><small>공급가액</small><strong>{{ totals.supply|floatformat:0 }}원</strong></div></div>
+    <div class="col-md-2"><div class="card border-0 shadow-sm p-3"><small>부가세</small><strong>{{ totals.vat|floatformat:0 }}원</strong></div></div>
+    <div class="col-md-2"><div class="card border-0 shadow-sm p-3"><small>총액</small><strong class="text-primary">{{ totals.total|floatformat:0 }}원</strong></div></div>
+</div>
+
+<div class="tab-content mb-4" id="settlement-step-content">
+    <div class="tab-pane fade {% if active_step == 1 %}show active{% endif %}" id="step-1" role="tabpanel" aria-labelledby="step-1-tab" tabindex="0">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white"><strong>1. DB 데이터 준비</strong></div>
+            <div class="card-body">
+                <p class="text-muted">정산 기간의 원본 데이터를 Snapshot으로 보관합니다. 현재 {{ settlement.sources.count }}건입니다.</p>
+                {% if can_work %}
+                <div class="d-flex flex-wrap gap-2 mb-3">
+                    <form method="post" action="{% url 'settlement_action' settlement.pk 'compare' %}">{% csrf_token %}<button class="btn btn-outline-secondary">DB 데이터 다시 확인</button></form>
+                    <form method="post" action="{% url 'settlement_action' settlement.pk 'apply_reload' %}" onsubmit="return confirm('현재 Snapshot과 계산 결과를 교체합니다. 계속할까요?')">{% csrf_token %}<button class="btn btn-outline-danger">변경 데이터 반영</button></form>
+                </div>
+                {% endif %}
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead><tr><th>계근일</th><th>폐기물</th><th>운반업체</th><th>처리업체</th><th class="text-end">계근량</th></tr></thead>
+                        <tbody>{% for source in settlement.sources.all %}<tr><td>{{ source.weigh_date|date:'Y-m-d H:i' }}</td><td>{{ source.waste_type }}</td><td>{{ source.transport_company }}</td><td>{{ source.disposal_company }}</td><td class="text-end">{{ source.weight }} {{ source.weight_unit }}</td></tr>{% empty %}<tr><td colspan="5" class="text-center text-muted py-4">불러온 데이터가 없습니다.</td></tr>{% endfor %}</tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="tab-pane fade {% if active_step == 2 %}show active{% endif %}" id="step-2" role="tabpanel" aria-labelledby="step-2-tab" tabindex="0">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white"><strong>2. 업체별 정산</strong></div>
+            <div class="card-body">
+                {% if can_work and settlement.status != 'CONFIRMED' and settlement.status != 'REPORT_GENERATED' and settlement.status != 'EMAIL_SENT' %}<form class="mb-3" method="post" action="{% url 'settlement_action' settlement.pk 'calculate' %}">{% csrf_token %}<button class="btn btn-primary">업체별 정산 계산</button></form>{% endif %}
+                <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+                    <thead><tr><th>업체</th><th>구분</th><th>폐기물</th><th class="text-end">계근량</th><th class="text-end">단가</th><th class="text-end">공급가액</th><th class="text-end">부가세</th><th class="text-end">총액</th></tr></thead>
+                    <tbody>{% for result in vendor_results %}<tr><td>{{ result.vendor_name }}</td><td>{{ result.get_price_type_display }}</td><td>{{ result.waste_type }}</td><td class="text-end">{{ result.weight }} {{ result.unit }}</td><td class="text-end">{{ result.unit_price|floatformat:2 }}</td><td class="text-end">{{ result.supply_amount|floatformat:0 }}원</td><td class="text-end">{{ result.vat_amount|floatformat:0 }}원</td><td class="text-end">{{ result.total_amount|floatformat:0 }}원</td></tr>{% empty %}<tr><td colspan="8" class="text-center text-muted py-4">업체 정산 전입니다.</td></tr>{% endfor %}</tbody>
+                </table></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="tab-pane fade {% if active_step == 3 %}show active{% endif %}" id="step-3" role="tabpanel" aria-labelledby="step-3-tab" tabindex="0">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center"><strong>3. 업체별 분배율 설정 및 사업부 배분</strong>{% if can_manage_rules %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'allocation_management' %}">분배율 관리</a>{% endif %}</div>
+            <div class="card-body">
+                <div class="table-responsive mb-3"><table class="table table-sm align-middle mb-0">
+                    <thead><tr><th>업체</th><th>적용 분배율</th><th>세부 비율</th><th></th></tr></thead>
+                    <tbody>{% for vendor in allocation_vendors %}<tr><td>{{ vendor.vendor_name }}</td><td>{% if can_manage_rules and settlement.status != 'CONFIRMED' and settlement.status != 'REPORT_GENERATED' and settlement.status != 'EMAIL_SENT' %}<form class="d-flex gap-2" method="post" action="{% url 'settlement_action' settlement.pk 'set_rule' %}">{% csrf_token %}<input type="hidden" name="vendor_id" value="{{ vendor.pk }}"><select class="form-select form-select-sm" name="allocation_rule" required><option value="">선택</option>{% for rule in available_rules %}<option value="{{ rule.pk }}" {% if rule.pk == vendor.allocation_rule_id %}selected{% endif %}>{{ rule.rule_code }} - {{ rule.rule_name }}</option>{% endfor %}</select><button class="btn btn-sm btn-outline-primary" type="submit">저장</button></form>{% else %}{{ vendor.allocation_rule|default:'미등록' }}{% endif %}</td><td>{% for detail in vendor.allocation_rule.details.all %}<span class="badge bg-light text-dark border">{{ detail.business_unit }} {{ detail.allocation_rate|floatformat:2 }}%</span> {% empty %}<span class="text-danger">분배율 미등록</span>{% endfor %}</td><td></td></tr>{% empty %}<tr><td colspan="4" class="text-center text-muted py-3">업체별 정산을 먼저 실행하세요.</td></tr>{% endfor %}</tbody>
+                </table></div>
+                {% if can_work and settlement.status != 'CONFIRMED' and settlement.status != 'REPORT_GENERATED' and settlement.status != 'EMAIL_SENT' %}<form class="mb-3" method="post" action="{% url 'settlement_action' settlement.pk 'allocate' %}">{% csrf_token %}<button class="btn btn-primary">사업부 배분 실행</button></form>{% endif %}
+                <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+                    <thead><tr><th>업체</th><th>폐기물</th><th>적용 규칙</th><th>사업부 배분 내역</th></tr></thead>
+                    <tbody>{% for result in vendor_results %}<tr><td>{{ result.vendor_name }}</td><td>{{ result.waste_type }}</td><td>{{ result.allocation_rule_code|default:'-' }}<div class="small text-muted">{{ result.allocation_rule_name }}</div></td><td>{% for row in result.allocations.all %}<div class="small">{{ row.business_unit }} {{ row.allocation_rate|floatformat:2 }}% · {{ row.supply_amount|floatformat:0 }}원{% if row.supply_adjustment %} <span class="badge bg-warning text-dark">보정 {{ row.supply_adjustment }}</span>{% endif %}</div>{% empty %}<span class="text-muted">미배분</span>{% endfor %}</td></tr>{% empty %}<tr><td colspan="4" class="text-center text-muted py-4">업체 정산을 먼저 실행하세요.</td></tr>{% endfor %}</tbody>
+                </table></div>
+                {% if can_work and adjustment_allocations and settlement.status != 'CONFIRMED' and settlement.status != 'REPORT_GENERATED' and settlement.status != 'EMAIL_SENT' %}
+                <div class="border rounded p-3 mt-3">
+                    <h6>추가 보정</h6>
+                    <p class="small text-muted">같은 업체 정산 행 안에서 공급가액을 한 사업부에서 다른 사업부로 이동합니다. 전체 합계는 유지됩니다.</p>
+                    <form method="post" action="{% url 'settlement_action' settlement.pk 'manual_adjust' %}" class="row g-2 align-items-end">
+                        {% csrf_token %}
+                        <div class="col-lg-3"><label class="form-label">차감 항목</label><select class="form-select" name="source_allocation" required><option value="">선택</option>{% for row in adjustment_allocations %}<option value="{{ row.pk }}">{{ row.vendor_result.vendor_name }} / {{ row.vendor_result.source.source_id }} / {{ row.business_unit }} / {{ row.supply_amount }}원</option>{% endfor %}</select></div>
+                        <div class="col-lg-3"><label class="form-label">증액 항목</label><select class="form-select" name="target_allocation" required><option value="">선택</option>{% for row in adjustment_allocations %}<option value="{{ row.pk }}">{{ row.vendor_result.vendor_name }} / {{ row.vendor_result.source.source_id }} / {{ row.business_unit }} / {{ row.supply_amount }}원</option>{% endfor %}</select></div>
+                        <div class="col-lg-2"><label class="form-label">금액(원)</label><input class="form-control" type="number" min="1" step="1" name="amount" required></div>
+                        <div class="col-lg-3"><label class="form-label">보정 사유</label><input class="form-control" name="reason" maxlength="200" required></div>
+                        <div class="col-lg-1"><button class="btn btn-warning w-100" type="submit">반영</button></div>
+                    </form>
+                </div>
+                {% endif %}
+                {% if business_totals %}<hr><div class="row g-2">{% for item in business_totals %}<div class="col-md-4"><div class="border rounded p-2"><strong>{{ item.business_unit }}</strong><div class="small text-muted">공급 {{ item.supply|floatformat:0 }}원 · 총액 {{ item.total|floatformat:0 }}원</div></div></div>{% endfor %}</div>{% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="tab-pane fade {% if active_step == 4 %}show active{% endif %}" id="step-4" role="tabpanel" aria-labelledby="step-4-tab" tabindex="0">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white"><strong>4. 검증 및 확정</strong></div>
+            <div class="card-body">
+                {% if can_work and settlement.status != 'CONFIRMED' and settlement.status != 'REPORT_GENERATED' and settlement.status != 'EMAIL_SENT' %}<form class="d-inline-block mb-3 me-2" method="post" action="{% url 'settlement_action' settlement.pk 'validate' %}">{% csrf_token %}<button class="btn btn-primary">정산 검증</button></form>{% endif %}
+                {% if settlement.status == 'VALIDATED' %}{% if can_confirm %}<form class="d-inline-block mb-3" method="post" action="{% url 'settlement_action' settlement.pk 'confirm' %}">{% csrf_token %}<button class="btn btn-danger">정산 확정</button></form>{% else %}<p class="text-muted">검증이 완료되었습니다. 정산 확정 권한이 있는 담당자가 확정할 수 있습니다.</p>{% endif %}{% endif %}
+                <div class="list-group list-group-flush">{% for item in settlement.validations.all %}<div class="list-group-item d-flex justify-content-between"><span>{% if item.passed %}✓{% else %}✕{% endif %} {{ item.code }}</span><span class="{% if item.passed %}text-success{% else %}text-danger{% endif %}">{{ item.message }}</span></div>{% empty %}<div class="text-center text-muted py-4">검증 전입니다.</div>{% endfor %}</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="tab-pane fade {% if active_step == 5 %}show active{% endif %}" id="step-5" role="tabpanel" aria-labelledby="step-5-tab" tabindex="0">
+        <div class="card border-0 shadow-sm"><div class="card-header bg-white"><strong>5. 결과물</strong></div><div class="card-body">
+            {% if settlement.status == 'CONFIRMED' and can_work %}<form method="post" action="{% url 'settlement_action' settlement.pk 'report' %}">{% csrf_token %}<button class="btn btn-success">보고서 / Excel 생성</button></form>
+            {% elif settlement.status == 'REPORT_GENERATED' or settlement.status == 'EMAIL_SENT' %}<a class="btn btn-success me-2" href="{% url 'settlement_report' settlement.pk %}">보고서 보기</a><a class="btn btn-success" href="{% url 'settlement_excel' settlement.pk %}">Excel 다운로드</a>
+            {% else %}<p class="text-muted mb-0">정산을 확정하면 결과물을 생성할 수 있습니다.</p>{% endif %}
+            {% if can_confirm %}
+                {% if settlement.status == 'CONFIRMED' or settlement.status == 'REPORT_GENERATED' or settlement.status == 'EMAIL_SENT' %}
+                <form class="border-top mt-3 pt-3" method="post" action="{% url 'settlement_action' settlement.pk 'reopen' %}" onsubmit="return confirm('완료 상태를 해제하고 재작업할까요?')">
+                    {% csrf_token %}
+                    <div class="row g-2 align-items-end">
+                        <div class="col-md-9"><label class="form-label">재작업 사유</label><input class="form-control" name="reason" maxlength="200" placeholder="분배율 변경, 추가 보정 등" required></div>
+                        <div class="col-md-3"><button class="btn btn-outline-danger w-100" type="submit">완료 정산 다시 열기</button></div>
+                    </div>
+                </form>
+                {% endif %}
+            {% endif %}
+        </div></div>
+    </div>
+
+    <div class="tab-pane fade {% if active_step == 6 %}show active{% endif %}" id="step-6" role="tabpanel" aria-labelledby="step-6-tab" tabindex="0">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center"><strong>6. 이메일 미리보기 및 발송</strong>{% if can_manage_rules %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'vendor_management' %}">업체 담당자 관리</a>{% endif %}</div>
+            <div class="card-body">
+                {% if settlement.status == 'REPORT_GENERATED' and can_confirm %}
+                <form class="mb-3" method="post" action="{% url 'settlement_action' settlement.pk 'prepare_emails' %}">{% csrf_token %}<button class="btn btn-primary" type="submit">업체별 메일 초안 만들기</button></form>
+                {% endif %}
+                {% for email in settlement_emails %}
+                <div class="border rounded p-3 mb-3">
+                    <div class="d-flex justify-content-between mb-2"><strong>{{ email.vendor_name }}</strong><span class="badge {% if email.status == 'SENT' %}bg-success{% elif email.status == 'FAILED' %}bg-danger{% else %}bg-secondary{% endif %}">{{ email.get_status_display }}</span></div>
+                    <dl class="row small mb-2"><dt class="col-sm-2">TO</dt><dd class="col-sm-10">{{ email.recipient_to }}</dd><dt class="col-sm-2">CC</dt><dd class="col-sm-10">{{ email.recipient_cc|default:'-' }}</dd><dt class="col-sm-2">제목</dt><dd class="col-sm-10">{{ email.subject }}</dd><dt class="col-sm-2">첨부</dt><dd class="col-sm-10">{{ email.vendor_name }} 업체별 정산 Excel</dd></dl>
+                    <pre class="bg-light border rounded p-3 small" style="white-space: pre-wrap;">{{ email.body }}</pre>
+                    {% if email.status == 'SENT' %}<div class="small text-success">{{ email.sent_at|date:'Y-m-d H:i:s' }} · {{ email.sent_by|default:'system' }} 발송</div>
+                    {% elif email.status == 'FAILED' %}<div class="alert alert-danger py-2 small">{{ email.error_message }}</div>{% endif %}
+                    {% if can_confirm and settlement.status == 'REPORT_GENERATED' and email.status != 'SENT' %}
+                    <form method="post" action="{% url 'settlement_action' settlement.pk 'send_email' %}" onsubmit="return confirm('표시된 수신자에게 메일을 발송할까요?')">
+                        {% csrf_token %}<input type="hidden" name="email_id" value="{{ email.pk }}">
+                        <div class="form-check mb-2"><input class="form-check-input" id="approved-{{ email.pk }}" type="checkbox" name="approved" value="yes" required><label class="form-check-label" for="approved-{{ email.pk }}">수신자·금액·첨부파일을 확인했으며 발송을 승인합니다.</label></div>
+                        <button class="btn btn-danger" type="submit">확인 후 발송</button>
+                    </form>
+                    {% endif %}
+                </div>
+                {% empty %}<p class="text-muted mb-0">보고서 생성 후 업체별 메일 초안을 만드세요. 메일 사용 업체와 TO 주소가 필요합니다.</p>{% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white"><strong>Audit</strong></div>
+    <div class="card-body">{% for log in settlement.audit_logs.all %}<div class="small border-bottom py-2">{{ log.created_at|date:'Y-m-d H:i:s' }} · {{ log.action }} · {{ log.user|default:'system' }}{% if log.reason %}<div class="text-muted">사유: {{ log.reason }}</div>{% endif %}{% if log.before or log.after %}<details class="mt-1"><summary class="text-muted">변경 내용</summary><div class="font-monospace text-break">이전: {{ log.before }}<br>이후: {{ log.after }}</div></details>{% endif %}</div>{% empty %}<span class="text-muted">기록 없음</span>{% endfor %}</div>
+</div>
+{% endblock %}

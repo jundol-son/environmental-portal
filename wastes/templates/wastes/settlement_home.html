@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+
+{% block title %}폐기물 월 정산{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+    <div class="col-lg-7">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white py-3"><strong>진행 중인 정산</strong></div>
+            <div class="card-body">
+                {% for settlement in active_settlements %}
+                <div class="border rounded p-3 mb-3 d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="mb-1">{{ settlement.settlement_month|date:'Y년 n월' }} 정산</h5>
+                        <div class="text-muted small">
+                            {{ settlement.period_start|date:'Y-m-d' }} ~ {{ settlement.period_end|date:'Y-m-d' }}
+                        </div>
+                        <div class="mt-2">
+                            현재 단계 <span class="badge bg-primary">{{ settlement.get_status_display }}</span>
+                            · 최종 저장 {{ settlement.updated_at|date:'Y-m-d H:i' }}
+                        </div>
+                    </div>
+                    <a class="btn btn-outline-primary" href="{% url 'settlement_detail' settlement.pk %}">이어서 작업하기</a>
+                </div>
+                {% empty %}
+                <div class="text-muted text-center py-4">진행 중인 정산이 없습니다.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white py-3"><strong>신규 정산 시작</strong></div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    {{ form.as_p }}
+                    <div class="alert alert-light border small">
+                        정산기간은 전월 21일부터 당월 20일까지 자동 계산됩니다.
+                        해당 기간의 배출 내역이 없으면 개발용 모의 데이터가 사용됩니다.
+                    </div>
+                    <button class="btn btn-primary w-100 mb-2" type="submit" name="mode" value="database">DB에서 신규 데이터 불러오기</button>
+                    <button class="btn btn-outline-primary w-100" type="submit" name="mode" value="practice">새 연습 데이터로 시작</button>
+                    <div class="form-text">선택 월이 이미 존재하면 연습 모드는 다음 빈 정산월을 자동 사용합니다.</div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

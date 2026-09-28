@@ -15,4 +15,20 @@ urlpatterns = [
     path('management/', views.waste_admin, name='waste_admin'),
 
     path('dashboard/', views.waste_dashboard, name='waste_dashboard'),
+
+    path('settlements/', views.settlement_home, name='settlement_home'),
+    path('settlements/<int:pk>/', views.settlement_detail, name='settlement_detail'),
+    path(
+        'settlements/<int:pk>/action/<str:action>/',
+        views.settlement_action,
+        name='settlement_action',
+    ),
+    path('settlements/<int:pk>/report/', views.settlement_report, name='settlement_report'),
+    path('settlements/<int:pk>/excel/', views.settlement_excel, name='settlement_excel'),
+    path('history/', views.settlement_history, name='settlement_history'),
+    path('vendors/', views.vendor_management, name='vendor_management'),
+    path('prices/', views.price_management, name='price_management'),
+    path('allocations/', views.allocation_management, name='allocation_management'),
+    path('reports/', views.report_management, name='report_management'),
+    path('system/', views.settlement_system, name='settlement_system'),
 ]

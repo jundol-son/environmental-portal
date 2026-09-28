@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white"><strong>{% if edit_id %}수정{% else %}신규 등록{% endif %}</strong></div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    {% if edit_id %}<input type="hidden" name="{% if kind == 'vendor' %}vendor_id{% else %}rule_id{% endif %}" value="{{ edit_id }}">{% endif %}
+                    {{ form.as_p }}
+                    <button class="btn btn-primary w-100" type="submit">저장</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-8">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white"><strong>등록 내역</strong></div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    {% if kind == 'vendor' %}
+                    <thead><tr><th>업체</th><th>유형</th><th>분배율</th><th>정산 담당자</th><th>메일</th><th></th></tr></thead>
+                    <tbody>{% for item in items %}<tr><td>{{ item.vendor_name }}</td><td>{{ item.get_vendor_type_display }}</td><td>{{ item.allocation_rule|default:'미등록' }}</td><td>{{ item.manager_name|default:'-' }}<div class="small text-muted">{{ item.manager_email|default:'TO 미등록' }}</div></td><td><span class="badge {% if item.mail_enabled %}bg-success{% else %}bg-secondary{% endif %}">{% if item.mail_enabled %}사용{% else %}미사용{% endif %}</span></td><td><a class="btn btn-sm btn-outline-secondary" href="?edit={{ item.pk }}">수정</a></td></tr>{% empty %}<tr><td colspan="6" class="text-center text-muted py-4">등록 내역 없음</td></tr>{% endfor %}</tbody>
+                    {% elif kind == 'price' %}
+                    <thead><tr><th>업체</th><th>폐기물</th><th>유형</th><th class="text-end">단가</th><th>적용기간</th></tr></thead>
+                    <tbody>{% for item in items %}<tr><td>{{ item.vendor.vendor_name }}</td><td>{{ item.waste_type }}</td><td>{{ item.get_price_type_display }}</td><td class="text-end">{{ item.unit_price|floatformat:2 }}원/{{ item.unit }}</td><td>{{ item.valid_from|date:'Y-m-d' }} ~ {{ item.valid_to|date:'Y-m-d'|default:'계속' }}</td></tr>{% empty %}<tr><td colspan="5" class="text-center text-muted py-4">등록 내역 없음</td></tr>{% endfor %}</tbody>
+                    {% else %}
+                    <thead><tr><th>코드</th><th>규칙명</th><th>사업부별 분배율</th><th>적용 업체</th><th>적용기간</th><th></th></tr></thead>
+                    <tbody>{% for item in items %}<tr><td>{{ item.rule_code }}</td><td>{{ item.rule_name }}</td><td>{% for detail in item.details.all %}<div>{{ detail.business_unit }} {{ detail.allocation_rate|floatformat:2 }}%</div>{% endfor %}</td><td>{% for vendor in item.vendors.all %}<span class="badge bg-light text-dark border">{{ vendor.vendor_name }}</span> {% empty %}<span class="text-muted">없음</span>{% endfor %}</td><td>{{ item.valid_from|date:'Y-m-d' }} ~ {{ item.valid_to|date:'Y-m-d'|default:'계속' }}</td><td><a class="btn btn-sm btn-outline-secondary" href="?edit={{ item.pk }}">수정</a></td></tr>{% empty %}<tr><td colspan="6" class="text-center text-muted py-4">등록 내역 없음</td></tr>{% endfor %}</tbody>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

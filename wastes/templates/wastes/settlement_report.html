@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+
+{% block title %}폐기물 월 정산 결과{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-end gap-2 mb-3">
+    <a class="btn btn-success" href="{% url 'settlement_excel' settlement.pk %}">Excel 다운로드</a>
+    <button class="btn btn-outline-secondary" onclick="window.print()">인쇄</button>
+</div>
+<div class="card border-0 shadow-sm p-4">
+    <h3>{{ settlement.settlement_month|date:'Y년 n월' }} 정산</h3>
+    <p class="text-muted">{{ settlement.period_start|date:'Y-m-d' }} ~ {{ settlement.period_end|date:'Y-m-d' }}</p>
+    <div class="row g-3 my-2">
+        <div class="col"><div class="border rounded p-3">총 계근량<br><strong>{{ totals.weight|floatformat:3 }}</strong></div></div>
+        <div class="col"><div class="border rounded p-3">공급가액<br><strong>{{ totals.supply|floatformat:0 }}원</strong></div></div>
+        <div class="col"><div class="border rounded p-3">부가세<br><strong>{{ totals.vat|floatformat:0 }}원</strong></div></div>
+        <div class="col"><div class="border rounded p-3">총 정산금액<br><strong>{{ totals.total|floatformat:0 }}원</strong></div></div>
+    </div>
+    <h5 class="mt-4">사업부별 금액</h5>
+    <table class="table table-sm"><thead><tr><th>사업부</th><th class="text-end">공급가액</th><th class="text-end">부가세</th><th class="text-end">총액</th></tr></thead><tbody>
+        {% for row in business_totals %}<tr><td>{{ row.business_unit }}</td><td class="text-end">{{ row.supply|floatformat:0 }}</td><td class="text-end">{{ row.vat|floatformat:0 }}</td><td class="text-end">{{ row.total|floatformat:0 }}</td></tr>{% endfor %}
+    </tbody></table>
+    <h5 class="mt-4">업체별 금액</h5>
+    <table class="table table-sm"><thead><tr><th>업체</th><th class="text-end">계근량</th><th class="text-end">공급가액</th><th class="text-end">부가세</th><th class="text-end">총액</th></tr></thead><tbody>
+        {% for row in vendor_totals %}<tr><td>{{ row.vendor_name }}</td><td class="text-end">{{ row.weight|floatformat:3 }}</td><td class="text-end">{{ row.supply|floatformat:0 }}</td><td class="text-end">{{ row.vat|floatformat:0 }}</td><td class="text-end">{{ row.total|floatformat:0 }}</td></tr>{% endfor %}
+    </tbody></table>
+    <h5 class="mt-4">업체별 적용 분배율</h5>
+    <table class="table table-sm"><thead><tr><th>업체</th><th>규칙 코드</th><th>규칙명</th></tr></thead><tbody>
+        {% for row in allocation_rules %}<tr><td>{{ row.vendor_name }}</td><td>{{ row.allocation_rule_code|default:'-' }}</td><td>{{ row.allocation_rule_name|default:'-' }}</td></tr>{% endfor %}
+    </tbody></table>
+    <h5 class="mt-4">검증 결과</h5>
+    {% for item in settlement.validations.all %}<div>{% if item.passed %}✅{% else %}⚠️{% endif %} {{ item.code }} — {{ item.message }}</div>{% endfor %}
+    <p class="small text-muted mt-4 mb-0">개발 및 기능 검증용 임시 양식입니다. 회사 양식 제공 후 Template Layer만 교체합니다.</p>
+</div>
+{% endblock %}
