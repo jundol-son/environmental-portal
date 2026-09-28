@@ -328,3 +328,13 @@
 - Validation: Git 원격 `origin`, `main` 브랜치 및 폐기물 정산 관련 변경 범위 확인
 - Blockers: 없음
 - Next step: 관련 파일만 선택 stage하고 테스트 후 commit·push
+
+### Phase E2 — GitHub 게시 완료
+
+- Request: 구현 내용과 Roo Code 지시서를 Git에 업데이트
+- Completed: 폐기물 정산 관련 20개 파일만 선택해 `ab9c724`로 커밋하고 GitHub `origin/main`에 push했다. Roo Code 문서에 기준 커밋을 명시했다.
+- Key decisions: 다른 앱, `venv`, `__pycache__`, 사내와 충돌할 수 있는 전체 `config/settings.py`·`templates/base.html` 변경은 커밋에서 제외했다. 필요한 설정·메뉴 병합 내용은 Roo Code 지시서에 명시했다.
+- Changed files: `ROO_CODE_HANDOFF/ROO_CODE_APPLY.md`, `CODEX_PROGRESS.md`
+- Validation: wastes 테스트 18건 통과, staged diff check 통과, `main -> origin/main` push 성공
+- Blockers: 없음
+- Next step: 사내 PC에서 `ROO_CODE_HANDOFF/ROO_CODE_APPLY.md`를 Roo Code에 전달해 기준 커밋을 병합

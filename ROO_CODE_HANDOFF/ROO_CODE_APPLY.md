@@ -4,6 +4,9 @@
 
 GitHub `https://github.com/jundol-son/environmental-portal.git`의 `main` 브랜치에 있는 폐기물 월 정산 기능을 사내 Django 프로젝트에 적용한다.
 
+- 기준 기능 커밋: `ab9c724` (`feat: add complete waste settlement workflow`)
+- 먼저 `git fetch origin` 후 위 커밋의 파일을 확인한다.
+
 기능 범위:
 
 - 사내 DB 계근 데이터 Snapshot
